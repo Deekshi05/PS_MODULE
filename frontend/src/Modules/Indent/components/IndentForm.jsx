@@ -1,20 +1,14 @@
-import { useEffect, useState } from 'react';
-import { apiFetch } from '../api';
+import { useState } from 'react';
+import { writeCreateIndent } from '../api';
 
 export default function IndentForm({ actingRole, onCreated }) {
   const [purpose, setPurpose] = useState('');
   const [justification, setJustification] = useState('');
   const [estimatedCost, setEstimatedCost] = useState('');
   const [items, setItems] = useState([{ item_id: '', quantity: 1, estimated_cost: '' }]);
-  const [storeItems, setStoreItems] = useState([]);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    // Minimal: no browse endpoint in backend; keep manual item IDs unless you seed.
-    setStoreItems([]);
-  }, []);
 
   function updateLine(idx, patch) {
     setItems((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -44,7 +38,8 @@ export default function IndentForm({ actingRole, onCreated }) {
           estimated_cost: l.estimated_cost ? Number(l.estimated_cost) : null,
         })),
       };
-      const created = await apiFetch('/ps/api/indents/', { actingRole, method: 'POST', body: payload });
+
+      const created = await writeCreateIndent({ actingRole, payload });
       setOk(`Indent submitted (ID ${created.id}).`);
       onCreated?.();
       setPurpose('');
@@ -130,8 +125,6 @@ export default function IndentForm({ actingRole, onCreated }) {
 
         {ok ? <div className="ok">{ok}</div> : null}
         {error ? <div className="error">{error}</div> : null}
-
-        {storeItems.length ? <div className="muted small">Tip: choose items from list (future).</div> : null}
       </form>
     </div>
   );

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { apiFetch } from '../api';
+import { useEffect, useMemo, useState } from 'react';
+import { readIndents } from '../api';
 
 export default function EmployeeDashboard({ actingRole, refreshKey }) {
   const [indents, setIndents] = useState([]);
@@ -8,24 +8,33 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
 
   useEffect(() => {
     let cancelled = false;
-    setError('');
-    apiFetch('/ps/api/indents/', { actingRole })
+
+    readIndents({ actingRole })
       .then((data) => {
-        if (!cancelled) setIndents(data);
+        if (!cancelled) {
+          setError('');
+          setIndents(data);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Failed to load');
       });
+
     return () => {
       cancelled = true;
     };
   }, [actingRole, refreshKey]);
 
-  const counts = indents.reduce((acc, i) => {
-    acc.ALL += 1;
-    acc[i.status] = (acc[i.status] || 0) + 1;
-    return acc;
-  }, { ALL: 0 });
+  const counts = useMemo(() => {
+    return indents.reduce(
+      (acc, i) => {
+        acc.ALL += 1;
+        acc[i.status] = (acc[i.status] || 0) + 1;
+        return acc;
+      },
+      { ALL: 0 }
+    );
+  }, [indents]);
 
   const visible = filter === 'ALL' ? indents : indents.filter((i) => i.status === filter);
 

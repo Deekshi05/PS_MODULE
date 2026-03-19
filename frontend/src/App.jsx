@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import { clearTokens, getAccessToken, getMe } from './api';
-import EmployeeDashboard from './components/EmployeeDashboard';
-import HodDashboard from './components/HodDashboard';
-import IndentForm from './components/IndentForm';
 import Login from './components/Login';
-import RoleSelector from './components/RoleSelector';
+import GlobalRoutes from './routes/globalRoutes';
 
 function Icon({ name }) {
   const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', xmlns: 'http://www.w3.org/2000/svg' };
@@ -54,8 +51,6 @@ function Icon({ name }) {
 function App() {
   const [authed, setAuthed] = useState(Boolean(getAccessToken()));
   const [role, setRole] = useState(localStorage.getItem('acting_role') || 'EMPLOYEE');
-  const [tab, setTab] = useState('dashboard');
-  const [refreshKey, setRefreshKey] = useState(0);
   const [allowedRoles, setAllowedRoles] = useState(['EMPLOYEE']);
 
   const actingRole = useMemo(() => {
@@ -128,100 +123,16 @@ function App() {
     );
   }
 
-  const isEmployee = actingRole === 'EMPLOYEE';
-  const pageTitle = tab === 'create' ? 'Create Indent' : isEmployee ? 'My Indents' : 'Approval Queue';
-
   return (
-    <div className="appShell">
-      <aside className="sidebar">
-        <div className="sbLogo" title="Purchase & Store">
-          PS
-        </div>
-        <button
-          className={tab === 'dashboard' ? 'sbBtn active' : 'sbBtn'}
-          onClick={() => setTab('dashboard')}
-          title="Dashboard"
-          type="button"
-        >
-          <Icon name="list" />
-        </button>
-        <button
-          className={tab === 'create' ? 'sbBtn active' : 'sbBtn'}
-          onClick={() => setTab('create')}
-          title="Create indent"
-          type="button"
-        >
-          <Icon name="plus" />
-        </button>
-        <div style={{ flex: '1 1 auto' }} />
-        <button className="sbBtn" title="Notifications" type="button" onClick={() => setTab('dashboard')}>
-          <Icon name="bell" />
-        </button>
-      </aside>
-
-      <div className="main">
-        <div className="topbar">
-          <div className="title">FUSION - Purchase & Store</div>
-          <div className="topRight">
-            <RoleSelector role={actingRole} setRole={onSetRole} allowedRoles={allowedRoles} />
-            <a className="link small" href="/workflow-reference.png" target="_blank" rel="noreferrer">
-              Workflow reference
-            </a>
-            <button
-              className="btn ghost"
-              onClick={() => {
-                clearTokens();
-                setAuthed(false);
-              }}
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-
-        <div className="content">
-          <div className="pageHead">
-            <div>
-              <div className="breadcrumb">Home &nbsp;›&nbsp; {pageTitle}</div>
-            </div>
-            <div className="segTabs" role="tablist" aria-label="Page tabs">
-              <button
-                type="button"
-                className={tab === 'dashboard' ? 'segBtn active' : 'segBtn'}
-                onClick={() => setTab('dashboard')}
-              >
-                Dashboard
-              </button>
-              <button
-                type="button"
-                className={tab === 'create' ? 'segBtn active' : 'segBtn'}
-                onClick={() => setTab('create')}
-              >
-                Create Indent
-              </button>
-            </div>
-          </div>
-
-          <div className="panel">
-            <div className="panelBody">
-              {tab === 'create' ? (
-                <IndentForm
-                  actingRole={actingRole}
-                  onCreated={() => {
-                    setRefreshKey((k) => k + 1);
-                    setTab('dashboard');
-                  }}
-                />
-              ) : isEmployee ? (
-                <EmployeeDashboard actingRole={actingRole} refreshKey={refreshKey} />
-              ) : (
-                <HodDashboard actingRole={actingRole} refreshKey={refreshKey} />
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <GlobalRoutes
+      actingRole={actingRole}
+      allowedRoles={allowedRoles}
+      onSetRole={onSetRole}
+      onLogout={() => {
+        clearTokens();
+        setAuthed(false);
+      }}
+    />
   );
 }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from accounts.models import ExtraInfo, HoldsDesignation
+from accounts.models import ExtraInfo
 
 
 class ActingRole:
@@ -19,28 +19,22 @@ def get_acting_role(request) -> str:
 
 
 def require_extrainfo(user) -> ExtraInfo:
-    try:
-        return user.extrainfo
-    except ExtraInfo.DoesNotExist as e:  # type: ignore[attr-defined]
-        raise PermissionError("User missing ExtraInfo") from e
+    # Lazy import to avoid circular dependency:
+    # selectors imports ActingRole from this module.
+    from ps.selectors import get_extrainfo_for_user
+
+    return get_extrainfo_for_user(user)
 
 
 def user_is_hod(extrainfo: ExtraInfo) -> bool:
-    # Treat common variants as department head
-    return HoldsDesignation.objects.filter(is_active=True, working=extrainfo).filter(
-        designation__name__icontains="hod"
-    ).exists() or HoldsDesignation.objects.filter(is_active=True, working=extrainfo).filter(
-        designation__name__icontains="dept head"
-    ).exists() or HoldsDesignation.objects.filter(is_active=True, working=extrainfo).filter(
-        designation__name__icontains="head of department"
-    ).exists()
+    from ps.selectors import is_user_hod
+
+    return is_user_hod(extrainfo)
 
 def user_has_designation(extrainfo: ExtraInfo, name_contains: str) -> bool:
-    return HoldsDesignation.objects.filter(
-        is_active=True,
-        designation__name__icontains=name_contains,
-        working=extrainfo,
-    ).exists()
+    from ps.selectors import has_designation
+
+    return has_designation(extrainfo, name_contains)
 
 
 @dataclass(frozen=True)
