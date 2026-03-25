@@ -381,3 +381,48 @@ def get_indent_for_stock_entry(indent_id: int, actor) -> Indent:
         raise PermissionDenied("Cannot create stock entry for another department.")
 
     return indent
+
+
+def get_ps_admin_indents_by_category(actor) -> dict:
+    """Get indents categorized by procurement stage for PS_ADMIN dashboard"""
+    if actor.role != ActingRole.PS_ADMIN:
+        raise PermissionDenied("Only PS_ADMIN can access this view.")
+
+    # Pending: APPROVED indents ready for bidding
+    pending_qs = (
+        Indent.objects.select_related("indenter", "department", "current_approver")
+        .prefetch_related("items__item")
+        .filter(status=Indent.Status.APPROVED)
+        .order_by("-updated_at")
+    )
+
+    # Bidding: Indents in BIDDING status
+    bidding_qs = (
+        Indent.objects.select_related("indenter", "department", "current_approver")
+        .prefetch_related("items__item")
+        .filter(status=Indent.Status.BIDDING)
+        .order_by("-updated_at")
+    )
+
+    # Purchased: Indents in PURCHASED status (awaiting stock entry)
+    purchased_qs = (
+        Indent.objects.select_related("indenter", "department", "current_approver")
+        .prefetch_related("items__item")
+        .filter(status=Indent.Status.PURCHASED)
+        .order_by("-updated_at")
+    )
+
+    # Stocked: Indents fully stocked after stock entry
+    stocked_qs = (
+        Indent.objects.select_related("indenter", "department", "current_approver")
+        .prefetch_related("items__item")
+        .filter(status=Indent.Status.STOCKED)
+        .order_by("-updated_at")
+    )
+
+    return {
+        "pending": IndentSerializer(pending_qs, many=True).data,
+        "bidding": IndentSerializer(bidding_qs, many=True).data,
+        "purchased": IndentSerializer(purchased_qs, many=True).data,
+        "stocked": IndentSerializer(stocked_qs, many=True).data,
+    }

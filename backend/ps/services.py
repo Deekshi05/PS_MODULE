@@ -249,3 +249,82 @@ def create_stock_entry(
         "indent": get_indent_data(indent.id),
         "stock_entry": StockEntrySerializer(entry).data,
     }
+
+
+def apply_ps_admin_action(
+    indent_id: int,
+    actor,
+    action_name: str,
+    notes: str = "",
+    request_user=None,
+) -> dict:
+    """Handle PS_ADMIN actions: BIDDING, PURCHASE and STOCK_ENTRY"""
+    if actor.role != ActingRole.PS_ADMIN:
+        raise PermissionDenied("Only PS_ADMIN can perform this action.")
+
+    indent = Indent.objects.get(id=indent_id)
+
+    if action_name == "BIDDING":
+        # Move from PENDING to BIDDING
+        if indent.status != Indent.Status.APPROVED:
+            raise ValidationError(
+                {"detail": "Only APPROVED indents can move to BIDDING status."}
+            )
+        indent.status = Indent.Status.BIDDING
+        indent.save(update_fields=["status", "updated_at"])
+
+    elif action_name == "PURCHASE":
+        # Move from pending/bidding to purchased; stock update happens on STOCK_ENTRY.
+        if indent.status not in (Indent.Status.APPROVED, Indent.Status.BIDDING):
+            raise ValidationError(
+                {
+                    "detail": "Only APPROVED or BIDDING indents can be marked as PURCHASED."
+                }
+            )
+
+        indent.status = Indent.Status.PURCHASED
+        indent.current_approver = None
+        indent.save(update_fields=["status", "current_approver", "updated_at"])
+
+    elif action_name == "STOCK_ENTRY":
+        if indent.status != Indent.Status.PURCHASED:
+            raise ValidationError(
+                {"detail": "Only PURCHASED indents can be moved to STOCKED."}
+            )
+
+        with transaction.atomic():
+            entry = StockEntry.objects.create(
+                indent=indent,
+                created_by=request_user,
+                acting_role=actor.role,
+                notes=notes or "",
+            )
+
+            for item_line in indent.items.all():
+                StockEntryItem.objects.create(
+                    stock_entry=entry,
+                    item_id=item_line.item_id,
+                    quantity=item_line.quantity,
+                )
+                stock, _ = CurrentStock.objects.get_or_create(
+                    item_id=item_line.item_id, defaults={"quantity": 0}
+                )
+                stock.quantity += item_line.quantity
+                stock.save(update_fields=["quantity", "updated_at"])
+
+            indent.status = Indent.Status.STOCKED
+            indent.current_approver = None
+            indent.save(update_fields=["status", "current_approver", "updated_at"])
+
+    else:
+        raise ValidationError({"action": "Invalid action"})
+
+    IndentAudit.objects.create(
+        indent=indent,
+        user=request_user,
+        acting_role=actor.role,
+        action=action_name,
+        notes=notes,
+    )
+
+    return get_indent_data(indent.id)

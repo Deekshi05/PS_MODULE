@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import RoleSelector from './RoleSelector';
 import EmployeeDashboard from './EmployeeDashboard';
 import HodDashboard from './HodDashboard';
+import PSAdminDashboard from './PSAdminDashboard';
 import IndentForm from './IndentForm';
 
 function Icon({ name }) {
@@ -53,7 +54,8 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
   const [refreshKey, setRefreshKey] = useState(0);
 
   const isEmployee = useMemo(() => actingRole === 'EMPLOYEE', [actingRole]);
-  const pageTitle = tab === 'create' ? 'Create Indent' : isEmployee ? 'My Indents' : 'Approval Queue';
+  const isPSAdmin = useMemo(() => actingRole === 'PS_ADMIN', [actingRole]);
+  const pageTitle = tab === 'create' ? 'Create Indent' : isEmployee ? 'My Indents' : isPSAdmin ? 'Procurement Management' : 'Approval Queue';
 
   return (
     <div className="appShell">
@@ -143,6 +145,8 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
                 />
               ) : isEmployee ? (
                 <EmployeeDashboard actingRole={actingRole} refreshKey={refreshKey} />
+              ) : isPSAdmin ? (
+                <PSAdminDashboard actingRole={actingRole} refreshKey={refreshKey} />
               ) : (
                 <HodDashboard actingRole={actingRole} refreshKey={refreshKey} />
               )}

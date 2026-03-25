@@ -9,10 +9,12 @@ from ps.selectors import (
     get_indents_for_actor_data,
     get_me_payload,
     get_procurement_ready_indents_for_actor_data,
+    get_ps_admin_indents_by_category,
     get_stock_breakdown_data,
 )
 from ps.services import (
     apply_hod_action,
+    apply_ps_admin_action,
     check_stock_action,
     create_indent,
     create_stock_entry,
@@ -20,6 +22,7 @@ from ps.services import (
 from ps.serializers import (
     HODActionSerializer,
     IndentCreateSerializer,
+    PSAdminActionSerializer,
     StockEntryCreateSerializer,
 )
 
@@ -101,6 +104,29 @@ class IndentViewSet(viewsets.ViewSet):
             notes=serializer.validated_data.get("notes", ""),
         )
         return Response(result, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="ps-admin-categories")
+    def ps_admin_categories(self, request):
+        actor = self._actor()
+        return Response(get_ps_admin_indents_by_category(actor))
+
+    @action(detail=True, methods=["post"], url_path="ps-admin-action")
+    def ps_admin_action(self, request, pk=None):
+        actor = self._actor()
+        serializer = PSAdminActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        action_name = serializer.validated_data["action"]
+        notes = serializer.validated_data.get("notes", "")
+
+        data = apply_ps_admin_action(
+            indent_id=pk,
+            actor=actor,
+            action_name=action_name,
+            notes=notes,
+            request_user=request.user,
+        )
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class MeViewSet(viewsets.ViewSet):

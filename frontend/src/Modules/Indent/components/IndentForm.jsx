@@ -28,11 +28,27 @@ export default function IndentForm({ actingRole, onCreated }) {
     setOk('');
     setLoading(true);
     try {
+      // Client-side validation
+      if (!purpose.trim()) {
+        throw new Error('Purpose is required');
+      }
+      
+      const validItems = items.filter((l) => l.item_id.trim() !== '');
+      if (validItems.length === 0) {
+        throw new Error('At least one item with a valid item ID is required');
+      }
+      
+      for (const item of validItems) {
+        if (!item.quantity || Number(item.quantity) < 1) {
+          throw new Error('All items must have a quantity of at least 1');
+        }
+      }
+
       const payload = {
         purpose,
         justification,
         estimated_cost: estimatedCost ? Number(estimatedCost) : null,
-        items: items.map((l) => ({
+        items: validItems.map((l) => ({
           item_id: Number(l.item_id),
           quantity: Number(l.quantity),
           estimated_cost: l.estimated_cost ? Number(l.estimated_cost) : null,
@@ -58,8 +74,13 @@ export default function IndentForm({ actingRole, onCreated }) {
       <h2>Create indent</h2>
       <form onSubmit={submit} className="form">
         <label>
-          Purpose
-          <input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g., Lab consumables" />
+          Purpose <span style={{ color: 'red' }}>*</span>
+          <input 
+            value={purpose} 
+            onChange={(e) => setPurpose(e.target.value)} 
+            placeholder="e.g., Lab consumables"
+            required
+          />
         </label>
 
         <label>
@@ -72,7 +93,7 @@ export default function IndentForm({ actingRole, onCreated }) {
           <input value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)} inputMode="decimal" />
         </label>
 
-        <div className="subhead">Items</div>
+        <div className="subhead">Items <span style={{ color: 'red' }}>*</span></div>
         <div className="table">
           <div className="thead">
             <div>Item ID</div>

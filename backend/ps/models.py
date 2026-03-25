@@ -37,6 +37,8 @@ class Indent(models.Model):
         STOCKED = "STOCKED", "Stocked"
         REJECTED = "REJECTED", "Rejected"
         FORWARDED = "FORWARDED", "Forwarded"
+        BIDDING = "BIDDING", "Bidding"
+        PURCHASED = "PURCHASED", "Purchased"
 
     class ProcurementType(models.TextChoices):
         INTERNAL = "INTERNAL", "Internal Stock"

@@ -98,6 +98,11 @@ class StockEntryCreateSerializer(serializers.Serializer):
         return items
 
 
+class PSAdminActionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["BIDDING", "PURCHASE", "STOCK_ENTRY"])
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
 class StockEntryItemSerializer(serializers.ModelSerializer):
     item = StoreItemSerializer()
 

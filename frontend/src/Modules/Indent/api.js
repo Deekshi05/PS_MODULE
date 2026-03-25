@@ -104,3 +104,23 @@ export async function writeCreateStockEntry({ actingRole, indentId, payload }) {
   }
 }
 
+export async function readPSAdminCategories({ actingRole }) {
+  try {
+    const res = await client.get('/ps/api/indents/ps-admin-categories/', { headers: authHeaders(actingRole) });
+    return res.data;
+  } catch (err) {
+    throwAxiosError(err);
+  }
+}
+
+export async function writePSAdminAction({ actingRole, indentId, payload }) {
+  try {
+    const res = await client.post(`/ps/api/indents/${indentId}/ps-admin-action/`, payload, {
+      headers: authHeaders(actingRole),
+    });
+    return res.data;
+  } catch (err) {
+    throwAxiosError(err);
+  }
+}
+
