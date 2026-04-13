@@ -57,3 +57,100 @@ Server-side checks:
 - `GET /ps/api/indents/` (EMPLOYEE/HOD) list indents (RBAC filtered)
 - `POST /ps/api/indents/{id}/hod-action/` (HOD) approve/reject/forward
 
+# 📦 Approved Procurement Conversion to Inventory
+
+## 🆔 Workflow Details
+
+* **Workflow Code:** WF-PS-002
+* **Workflow Name:** Approved Procurement Conversion to Inventory
+
+---
+
+## 🎯 Objective
+
+Convert approved procurement requests into inventory stock records.
+
+---
+
+## ⚡ Trigger
+
+This workflow is triggered when an **Admin initiates stock entry**.
+
+---
+
+## 👥 Actors / Lanes
+
+* **Dept Admin**
+* **PS Admin**
+* **System**
+
+---
+
+## ✅ Preconditions
+
+Before starting the workflow:
+
+* All approvals must be completed
+* Items must not be marked as purchased
+
+---
+
+## 🚀 Start Task
+
+* **UC-007: Stock Entry**
+
+---
+
+## 🔄 Workflow Overview
+
+### 🧩 Activity Graph – Nodes
+
+| Node ID | Type   | Label                 | Actor/Lane | Notes     |
+| ------- | ------ | --------------------- | ---------- | --------- |
+| N1      | UC     | View Approved Indents | Admin      | UC-005    |
+| N2      | UC     | Create Stock Entry    | Admin      | UC-007    |
+| N3      | System | Generate Stock Items  | System     | BR-7      |
+| N4      | System | Mark Purchased        | System     | BR-6      |
+| END     | End    | Stocked               | —          | Completed |
+
+---
+
+### 🔁 Directed Edges
+
+| Edge ID | From | To  | Condition          | Outcome         |
+| ------- | ---- | --- | ------------------ | --------------- |
+| E1      | N1   | N2  | Approvals verified | Allow entry     |
+| E2      | N2   | N3  | Qty > 0            | Generate units  |
+| E3      | N3   | N4  | Items created      | Mark purchased  |
+| E4      | N4   | END | Status updated     | Workflow closed |
+
+---
+
+## 📊 Workflow Diagram (Mermaid)
+
+```mermaid
+flowchart TD
+    N1[View Approved Indents] -->|Approvals verified| N2[Create Stock Entry]
+    N2 -->|Qty > 0| N3[Generate Stock Items]
+    N3 -->|Items created| N4[Mark Purchased]
+    N4 -->|Status updated| END[Stocked]
+```
+
+---
+
+## 🧠 Business Rules
+
+* **BR-6:** Items must be marked as purchased after stock generation
+* **BR-7:** Stock items should be generated based on entered quantity
+
+---
+
+## 🛠️ Notes
+
+* Ensures procurement lifecycle completion
+* Prevents duplicate purchases
+* Maintains accurate inventory records
+
+---
+
+```

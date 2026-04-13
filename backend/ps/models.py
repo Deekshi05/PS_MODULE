@@ -39,6 +39,7 @@ class Indent(models.Model):
         FORWARDED = "FORWARDED", "Forwarded"
         BIDDING = "BIDDING", "Bidding"
         PURCHASED = "PURCHASED", "Purchased"
+        STOCK_ENTRY = "STOCK_ENTRY", "Stock Entry"
 
     class ProcurementType(models.TextChoices):
         INTERNAL = "INTERNAL", "Internal Stock"
@@ -66,6 +67,7 @@ class Indent(models.Model):
         null=True,
         blank=True,
     )
+    delivery_confirmed = models.BooleanField(default=False)
     current_approver = models.ForeignKey(
         ExtraInfo,
         on_delete=models.PROTECT,

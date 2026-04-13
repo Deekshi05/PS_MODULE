@@ -124,3 +124,14 @@ export async function writePSAdminAction({ actingRole, indentId, payload }) {
   }
 }
 
+export async function writeConfirmDelivery({ actingRole, indentId }) {
+  try {
+    const res = await client.post(`/ps/api/indents/${indentId}/confirm-delivery/`, {}, {
+      headers: authHeaders(actingRole),
+    });
+    return res.data;
+  } catch (err) {
+    throwAxiosError(err);
+  }
+}
+

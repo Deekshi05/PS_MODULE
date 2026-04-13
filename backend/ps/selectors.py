@@ -246,6 +246,9 @@ def get_indents_for_actor_data(actor) -> List[dict]:
             status__in=[
                 Indent.Status.EXTERNAL_PROCUREMENT,
                 Indent.Status.APPROVED,
+                Indent.Status.BIDDING,
+                Indent.Status.PURCHASED,
+                Indent.Status.STOCK_ENTRY,
                 Indent.Status.STOCKED,
             ]
         )
@@ -366,12 +369,14 @@ def get_indent_for_stock_entry(indent_id: int, actor) -> Indent:
     if not indent:
         raise ValidationError({"detail": "Indent not found."})
 
-    if indent.status not in (
-        Indent.Status.EXTERNAL_PROCUREMENT,
-        Indent.Status.APPROVED,
-    ):
+    if indent.status != Indent.Status.PURCHASED:
         raise ValidationError(
-            {"detail": "Stock entry is allowed only for approved procurement indents."}
+            {"detail": "Stock entry is allowed only for purchased indents."}
+        )
+
+    if not indent.delivery_confirmed:
+        raise ValidationError(
+            {"detail": "Delivery must be confirmed before stock entry."}
         )
 
     if (
@@ -404,7 +409,7 @@ def get_ps_admin_indents_by_category(actor) -> dict:
         .order_by("-updated_at")
     )
 
-    # Purchased: Indents in PURCHASED status (awaiting stock entry)
+    # Purchased: Indents in PURCHASED status (awaiting/confirmed delivery)
     purchased_qs = (
         Indent.objects.select_related("indenter", "department", "current_approver")
         .prefetch_related("items__item")
@@ -412,11 +417,11 @@ def get_ps_admin_indents_by_category(actor) -> dict:
         .order_by("-updated_at")
     )
 
-    # Stocked: Indents fully stocked after stock entry
-    stocked_qs = (
+    # Stock entry: Indents moved to stock entry stage
+    stock_entry_qs = (
         Indent.objects.select_related("indenter", "department", "current_approver")
         .prefetch_related("items__item")
-        .filter(status=Indent.Status.STOCKED)
+        .filter(status__in=[Indent.Status.STOCK_ENTRY, Indent.Status.STOCKED])
         .order_by("-updated_at")
     )
 
@@ -424,5 +429,5 @@ def get_ps_admin_indents_by_category(actor) -> dict:
         "pending": IndentSerializer(pending_qs, many=True).data,
         "bidding": IndentSerializer(bidding_qs, many=True).data,
         "purchased": IndentSerializer(purchased_qs, many=True).data,
-        "stocked": IndentSerializer(stocked_qs, many=True).data,
+        "stock_entry": IndentSerializer(stock_entry_qs, many=True).data,
     }

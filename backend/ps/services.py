@@ -233,7 +233,7 @@ def create_stock_entry(
             stock.quantity += qty
             stock.save(update_fields=["quantity", "updated_at"])
 
-        indent.status = Indent.Status.STOCKED
+        indent.status = Indent.Status.STOCK_ENTRY
         indent.current_approver = None
         indent.save(update_fields=["status", "current_approver", "updated_at"])
 
@@ -258,14 +258,14 @@ def apply_ps_admin_action(
     notes: str = "",
     request_user=None,
 ) -> dict:
-    """Handle PS_ADMIN actions: BIDDING, PURCHASE and STOCK_ENTRY"""
+    """Handle PS_ADMIN actions: BIDDING, PURCHASE and STOCK_ENTRY."""
     if actor.role != ActingRole.PS_ADMIN:
         raise PermissionDenied("Only PS_ADMIN can perform this action.")
 
     indent = Indent.objects.get(id=indent_id)
 
     if action_name == "BIDDING":
-        # Move from PENDING to BIDDING
+        # Start bidding from pending queue.
         if indent.status != Indent.Status.APPROVED:
             raise ValidationError(
                 {"detail": "Only APPROVED indents can move to BIDDING status."}
@@ -274,7 +274,7 @@ def apply_ps_admin_action(
         indent.save(update_fields=["status", "updated_at"])
 
     elif action_name == "PURCHASE":
-        # Move from pending/bidding to purchased; stock update happens on STOCK_ENTRY.
+        # Allow direct procurement from pending, or purchase completion from bidding.
         if indent.status not in (Indent.Status.APPROVED, Indent.Status.BIDDING):
             raise ValidationError(
                 {
@@ -283,13 +283,26 @@ def apply_ps_admin_action(
             )
 
         indent.status = Indent.Status.PURCHASED
+        indent.delivery_confirmed = False
         indent.current_approver = None
-        indent.save(update_fields=["status", "current_approver", "updated_at"])
+        indent.save(
+            update_fields=[
+                "status",
+                "delivery_confirmed",
+                "current_approver",
+                "updated_at",
+            ]
+        )
 
     elif action_name == "STOCK_ENTRY":
         if indent.status != Indent.Status.PURCHASED:
             raise ValidationError(
-                {"detail": "Only PURCHASED indents can be moved to STOCKED."}
+                {"detail": "Only PURCHASED indents can be moved to STOCK_ENTRY."}
+            )
+
+        if not indent.delivery_confirmed:
+            raise ValidationError(
+                {"detail": "Delivery must be confirmed by employee before stock entry."}
             )
 
         with transaction.atomic():
@@ -312,7 +325,7 @@ def apply_ps_admin_action(
                 stock.quantity += item_line.quantity
                 stock.save(update_fields=["quantity", "updated_at"])
 
-            indent.status = Indent.Status.STOCKED
+            indent.status = Indent.Status.STOCK_ENTRY
             indent.current_approver = None
             indent.save(update_fields=["status", "current_approver", "updated_at"])
 
@@ -325,6 +338,41 @@ def apply_ps_admin_action(
         acting_role=actor.role,
         action=action_name,
         notes=notes,
+    )
+
+    return get_indent_data(indent.id)
+
+
+def confirm_delivery(indent_id: int, actor, request_user=None) -> dict:
+    """Allow employees to confirm delivery for their purchased indents."""
+    if actor.role != ActingRole.EMPLOYEE:
+        raise PermissionDenied("Only employees can confirm delivery.")
+
+    indent = (
+        Indent.objects.select_related("indenter")
+        .filter(id=indent_id, indenter=actor.extrainfo)
+        .first()
+    )
+    if not indent:
+        raise PermissionDenied("You can only confirm delivery for your own indents.")
+
+    if indent.status != Indent.Status.PURCHASED:
+        raise ValidationError(
+            {"detail": "Delivery can only be confirmed for PURCHASED indents."}
+        )
+
+    if indent.delivery_confirmed:
+        raise ValidationError({"detail": "Delivery is already confirmed."})
+
+    indent.delivery_confirmed = True
+    indent.save(update_fields=["delivery_confirmed", "updated_at"])
+
+    IndentAudit.objects.create(
+        indent=indent,
+        user=request_user,
+        acting_role=actor.role,
+        action="CONFIRM_DELIVERY",
+        notes="",
     )
 
     return get_indent_data(indent.id)

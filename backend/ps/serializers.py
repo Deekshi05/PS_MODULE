@@ -38,6 +38,7 @@ class IndentSerializer(serializers.ModelSerializer):
             "justification",
             "estimated_cost",
             "status",
+            "delivery_confirmed",
             "stock_available",
             "procurement_type",
             "department",
@@ -48,6 +49,7 @@ class IndentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "status",
+            "delivery_confirmed",
             "stock_available",
             "procurement_type",
             "department",

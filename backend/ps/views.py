@@ -16,6 +16,7 @@ from ps.services import (
     apply_hod_action,
     apply_ps_admin_action,
     check_stock_action,
+    confirm_delivery,
     create_indent,
     create_stock_entry,
 )
@@ -126,6 +127,12 @@ class IndentViewSet(viewsets.ViewSet):
             notes=notes,
             request_user=request.user,
         )
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="confirm-delivery")
+    def confirm_delivery_action(self, request, pk=None):
+        actor = self._actor()
+        data = confirm_delivery(indent_id=pk, actor=actor, request_user=request.user)
         return Response(data, status=status.HTTP_200_OK)
 
 

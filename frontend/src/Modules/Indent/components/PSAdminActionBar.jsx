@@ -6,13 +6,13 @@ export default function PSAdminActionBar({ indent, category, onDone }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Pending category: show "Bidding" button
+  // Pending category: show start bidding and direct procurement actions.
   const canBidding = category === 'pending' && indent.status === 'APPROVED';
-  
-  // Bidding category: show "Purchase" button
+
+  // Bidding category: show mark as purchased action.
   const canPurchase = category === 'bidding' && indent.status === 'BIDDING';
   const canDirectPurchase = category === 'pending' && indent.status === 'APPROVED';
-  const canStockEntry = category === 'purchased' && indent.status === 'PURCHASED';
+  const canStockEntry = category === 'purchased' && indent.status === 'PURCHASED' && indent.delivery_confirmed;
 
   async function doAction(action) {
     setError('');
@@ -50,7 +50,7 @@ export default function PSAdminActionBar({ indent, category, onDone }) {
             disabled={loading} 
             onClick={() => doAction('BIDDING')}
           >
-            {loading ? 'Processing...' : 'Move to Bidding'}
+            {loading ? 'Processing...' : 'Start Bidding'}
           </button>
         ) : null}
 
@@ -60,7 +60,7 @@ export default function PSAdminActionBar({ indent, category, onDone }) {
             disabled={loading} 
             onClick={() => doAction('PURCHASE')}
           >
-            {loading ? 'Processing...' : 'Mark as Purchased'}
+            {loading ? 'Processing...' : 'Direct Procurement'}
           </button>
         ) : null}
         
@@ -70,7 +70,7 @@ export default function PSAdminActionBar({ indent, category, onDone }) {
             disabled={loading} 
             onClick={() => doAction('PURCHASE')}
           >
-            {loading ? 'Processing...' : 'Move to Purchased'}
+            {loading ? 'Processing...' : 'Mark as Purchased'}
           </button>
         ) : null}
 

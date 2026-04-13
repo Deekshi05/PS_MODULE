@@ -3,11 +3,12 @@ import { readPSAdminCategories } from '../api';
 import PSAdminActionBar from './PSAdminActionBar';
 
 export default function PSAdminDashboard({ actingRole, refreshKey }) {
-  const [categories, setCategories] = useState({ pending: [], bidding: [], purchased: [], stocked: [] });
+  const [categories, setCategories] = useState({ pending: [], bidding: [], purchased: [], stock_entry: [] });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const [query, setQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('ALL');
 
   useEffect(() => {
     let cancelled = false;
@@ -40,10 +41,55 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
     return indents.filter((i) => (i.purpose || '').toLowerCase().includes(normalizedQuery));
   };
 
-  const pendingIndents = filterIndents(categories.pending || []);
-  const biddingIndents = filterIndents(categories.bidding || []);
-  const purchasedIndents = filterIndents(categories.purchased || []);
-  const stockedIndents = filterIndents(categories.stocked || []);
+  const rawPending = categories.pending || [];
+  const rawBidding = categories.bidding || [];
+  const rawPurchased = categories.purchased || [];
+  const rawStockEntry = categories.stock_entry || [];
+
+  const pendingIndents = filterIndents(rawPending).map((i) => ({ ...i, _category: 'pending' }));
+  const biddingIndents = filterIndents(rawBidding).map((i) => ({ ...i, _category: 'bidding' }));
+  const purchasedIndents = filterIndents(rawPurchased).map((i) => ({ ...i, _category: 'purchased' }));
+  const stockEntryIndents = filterIndents(rawStockEntry).map((i) => ({ ...i, _category: 'stock_entry' }));
+
+  const allIndents = [...pendingIndents, ...biddingIndents, ...purchasedIndents, ...stockEntryIndents].sort(
+    (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
+  );
+
+  const counts = {
+    ALL: rawPending.length + rawBidding.length + rawPurchased.length + rawStockEntry.length,
+    pending: rawPending.length,
+    bidding: rawBidding.length,
+    purchased: rawPurchased.length,
+    stock_entry: rawStockEntry.length,
+  };
+
+  const activeLabelMap = {
+    ALL: 'All',
+    pending: 'Pending',
+    bidding: 'Bidding',
+    purchased: 'Purchased',
+    stock_entry: 'Stock Entry',
+  };
+
+  const visible =
+    activeCategory === 'ALL'
+      ? allIndents
+      : activeCategory === 'pending'
+        ? pendingIndents
+        : activeCategory === 'bidding'
+          ? biddingIndents
+          : activeCategory === 'purchased'
+            ? purchasedIndents
+            : stockEntryIndents;
+
+  const activeLabel = activeLabelMap[activeCategory] || 'All';
+
+  function getBadgeStyle(status) {
+    if (status === 'BIDDING') return { backgroundColor: '#ff9800' };
+    if (status === 'PURCHASED') return { backgroundColor: '#4caf50' };
+    if (status === 'STOCK_ENTRY' || status === 'STOCKED') return { backgroundColor: '#2e7d32' };
+    return undefined;
+  }
 
   return (
     <div className="card">
@@ -60,170 +106,86 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
         />
       </div>
 
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className={activeCategory === 'ALL' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('ALL')}>
+          All ({counts.ALL || 0})
+        </button>
+        <button className={activeCategory === 'pending' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('pending')}>
+          Pending ({counts.pending || 0})
+        </button>
+        <button className={activeCategory === 'bidding' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('bidding')}>
+          Bidding ({counts.bidding || 0})
+        </button>
+        <button className={activeCategory === 'purchased' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('purchased')}>
+          Purchased ({counts.purchased || 0})
+        </button>
+        <button className={activeCategory === 'stock_entry' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('stock_entry')}>
+          Stock Entry ({counts.stock_entry || 0})
+        </button>
+      </div>
+
       {error ? <div className="error">{error}</div> : null}
 
       {loading && Object.keys(categories).every((k) => !categories[k]?.length) ? (
         <div className="muted">Loading indents...</div>
       ) : (
-        <>
-          {/* Pending Category */}
-          <div style={{ marginTop: 20 }}>
-            <h3 style={{ margin: '0 0 12px 0' }}>
-              Pending ({pendingIndents.length})
-            </h3>
-            <div className="list">
-              {pendingIndents.length ? (
-                pendingIndents.map((i) => (
-                  <div className="listItem" key={i.id}>
-                    <div className="row">
-                      <div>
-                        <div className="title">Indent #{i.id}</div>
-                        <div className="muted small">{i.purpose}</div>
-                        <div className="muted small">Department: {i.department}</div>
-                      </div>
-                      <div className="right">
-                        <div className="badge">{i.status}</div>
-                      </div>
+        <div style={{ marginTop: 16 }}>
+          <h3 style={{ margin: '0 0 12px 0' }}>
+            {activeLabel} ({visible.length})
+          </h3>
+          <div className="list">
+            {visible.length ? (
+              visible.map((i) => (
+                <div className="listItem" key={`${i._category || 'unknown'}-${i.id}`}>
+                  <div className="row">
+                    <div>
+                      <div className="title">Indent #{i.id}</div>
+                      <div className="muted small">{i.purpose}</div>
+                      <div className="muted small">Department: {i.department}</div>
+                      {activeCategory === 'ALL' ? (
+                        <div className="muted small">Category: {(i._category || '').toUpperCase()}</div>
+                      ) : null}
                     </div>
-                    <div style={{ marginTop: 8 }}>
-                      <div className="muted small">Items: {i.items?.length || 0}</div>
-                      {i.items?.map((item) => (
-                        <div key={item.id} className="muted small">
-                          - {item.item.name}: {item.quantity} {item.item.unit}
-                        </div>
-                      ))}
+                    <div className="right">
+                      <div className="badge" style={getBadgeStyle(i.status)}>{i.status}</div>
                     </div>
-                    <PSAdminActionBar 
-                      indent={i} 
-                      category="pending" 
-                      onDone={() => setTick((t) => t + 1)} 
-                    />
                   </div>
-                ))
-              ) : (
-                <div className="muted small">No pending indents</div>
-              )}
-            </div>
-          </div>
 
-          {/* Bidding Category */}
-          <div style={{ marginTop: 20 }}>
-            <h3 style={{ margin: '0 0 12px 0' }}>
-              Bidding ({biddingIndents.length})
-            </h3>
-            <div className="list">
-              {biddingIndents.length ? (
-                biddingIndents.map((i) => (
-                  <div className="listItem" key={i.id}>
-                    <div className="row">
-                      <div>
-                        <div className="title">Indent #{i.id}</div>
-                        <div className="muted small">{i.purpose}</div>
-                        <div className="muted small">Department: {i.department}</div>
+                  <div style={{ marginTop: 8 }}>
+                    <div className="muted small">Items: {i.items?.length || 0}</div>
+                    {i.items?.map((item) => (
+                      <div key={item.id} className="muted small">
+                        - {item.item.name}: {item.quantity} {item.item.unit}
                       </div>
-                      <div className="right">
-                        <div className="badge" style={{ backgroundColor: '#ff9800' }}>{i.status}</div>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 8 }}>
-                      <div className="muted small">Items: {i.items?.length || 0}</div>
-                      {i.items?.map((item) => (
-                        <div key={item.id} className="muted small">
-                          - {item.item.name}: {item.quantity} {item.item.unit}
-                        </div>
-                      ))}
-                    </div>
-                    <PSAdminActionBar 
-                      indent={i} 
-                      category="bidding" 
-                      onDone={() => setTick((t) => t + 1)} 
-                    />
+                    ))}
                   </div>
-                ))
-              ) : (
-                <div className="muted small">No indents in bidding</div>
-              )}
-            </div>
-          </div>
 
-          {/* Purchased Category */}
-          <div style={{ marginTop: 20 }}>
-            <h3 style={{ margin: '0 0 12px 0' }}>
-              Purchased ({purchasedIndents.length})
-            </h3>
-            <div className="list">
-              {purchasedIndents.length ? (
-                purchasedIndents.map((i) => (
-                  <div className="listItem" key={i.id}>
-                    <div className="row">
-                      <div>
-                        <div className="title">Indent #{i.id}</div>
-                        <div className="muted small">{i.purpose}</div>
-                        <div className="muted small">Department: {i.department}</div>
-                      </div>
-                      <div className="right">
-                        <div className="badge" style={{ backgroundColor: '#4caf50' }}>{i.status}</div>
-                      </div>
+                  {i.status === 'PURCHASED' ? (
+                    <div className="muted small" style={{ marginTop: 8 }}>
+                      Delivery Confirmed: <b>{i.delivery_confirmed ? 'Yes' : 'No'}</b>
                     </div>
-                    <div style={{ marginTop: 8 }}>
-                      <div className="muted small">Items: {i.items?.length || 0}</div>
-                      {i.items?.map((item) => (
-                        <div key={item.id} className="muted small">
-                          - {item.item.name}: {item.quantity} {item.item.unit}
-                        </div>
-                      ))}
-                    </div>
+                  ) : null}
+
+                  {(i._category === 'pending' || i._category === 'bidding' || i._category === 'purchased') ? (
                     <PSAdminActionBar
                       indent={i}
-                      category="purchased"
+                      category={i._category}
                       onDone={() => setTick((t) => t + 1)}
                     />
-                  </div>
-                ))
-              ) : (
-                <div className="muted small">No purchased indents</div>
-              )}
-            </div>
-          </div>
+                  ) : null}
 
-          {/* Stocked Category */}
-          <div style={{ marginTop: 20 }}>
-            <h3 style={{ margin: '0 0 12px 0' }}>
-              Stocked ({stockedIndents.length})
-            </h3>
-            <div className="list">
-              {stockedIndents.length ? (
-                stockedIndents.map((i) => (
-                  <div className="listItem" key={i.id}>
-                    <div className="row">
-                      <div>
-                        <div className="title">Indent #{i.id}</div>
-                        <div className="muted small">{i.purpose}</div>
-                        <div className="muted small">Department: {i.department}</div>
-                      </div>
-                      <div className="right">
-                        <div className="badge" style={{ backgroundColor: '#2e7d32' }}>{i.status}</div>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 8 }}>
-                      <div className="muted small">Items: {i.items?.length || 0}</div>
-                      {i.items?.map((item) => (
-                        <div key={item.id} className="muted small">
-                          - {item.item.name}: {item.quantity} {item.item.unit}
-                        </div>
-                      ))}
-                    </div>
+                  {(i._category === 'stock_entry' || i.status === 'STOCK_ENTRY' || i.status === 'STOCKED') ? (
                     <div className="muted small" style={{ marginTop: 8, color: '#2e7d32' }}>
-                      ✓ Stock updated
+                      ✓ Stock entry completed
                     </div>
-                  </div>
-                ))
-              ) : (
-                <div className="muted small">No stocked indents</div>
-              )}
-            </div>
+                  ) : null}
+                </div>
+              ))
+            ) : (
+              <div className="muted small">No indents for this category.</div>
+            )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
