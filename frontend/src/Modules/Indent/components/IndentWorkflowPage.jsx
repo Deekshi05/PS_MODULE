@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import RoleSelector from './RoleSelector';
 import EmployeeDashboard from './EmployeeDashboard';
 import HodDashboard from './HodDashboard';
@@ -55,6 +56,7 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
 
   const isEmployee = useMemo(() => actingRole === 'EMPLOYEE', [actingRole]);
   const isPSAdmin = useMemo(() => actingRole === 'PS_ADMIN', [actingRole]);
+  const isDepadmin = useMemo(() => actingRole === 'DEPADMIN', [actingRole]);
   const pageTitle = tab === 'create' ? 'Create Indent' : isEmployee ? 'My Indents' : isPSAdmin ? 'Procurement Management' : 'Approval Queue';
 
   return (
@@ -94,6 +96,11 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
         <div className="topbar">
           <div className="title">FUSION - Purchase & Store</div>
           <div className="topRight">
+            {isDepadmin ? (
+              <Link className="btn" to="/depadmin/stock">
+                DepAdmin Stock
+              </Link>
+            ) : null}
             <RoleSelector role={actingRole} setRole={onSetRole} allowedRoles={allowedRoles} />
             <a className="link small" href="/workflow-reference.png" target="_blank" rel="noreferrer">
               Workflow reference

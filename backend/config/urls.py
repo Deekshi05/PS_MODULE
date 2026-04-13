@@ -23,4 +23,5 @@ urlpatterns = [
     path("ps/api/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("ps/api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("ps/api/", include("ps.urls")),
+    path("ps/api/", include("department_stock.urls")),
 ]
