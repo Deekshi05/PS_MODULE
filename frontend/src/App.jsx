@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import './App.css';
-import { clearTokens, getAccessToken, getMe } from './api';
-import Login from './components/Login';
+import { clearTokens, getAccessToken, getMe } from './Modules/psmodule/api';
+import Login from './Modules/psmodule/components/Login';
 import GlobalRoutes from './routes/globalRoutes';
 
 function Icon({ name }) {
