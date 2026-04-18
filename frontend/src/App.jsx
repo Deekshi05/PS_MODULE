@@ -106,9 +106,6 @@ function App() {
               <div>
                 <div className="breadcrumb">Home &nbsp;›&nbsp; Sign in</div>
               </div>
-              <a className="link small" href="/workflow-reference.png" target="_blank" rel="noreferrer">
-                Workflow reference
-              </a>
             </div>
             <div className="authCenter">
               <div className="panel authPanel">

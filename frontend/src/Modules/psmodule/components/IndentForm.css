@@ -1,0 +1,50 @@
+.indentGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.indentGridTwo {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
+.thead.indentContactsHead,
+.trow.indentContactsRow {
+  grid-template-columns: 1fr 1.4fr 0.7fr;
+}
+
+.thead.indentItemsHead,
+.trow.indentItemsRow {
+  grid-template-columns: minmax(140px, 1fr) minmax(150px, 1fr) minmax(110px, 0.7fr) minmax(150px, 1fr) minmax(120px, 0.8fr) auto;
+  gap: 6px;
+}
+
+.thead.indentItemsHead {
+  margin-bottom: 2px;
+}
+
+.thead.indentItemsHead > div {
+  white-space: nowrap;
+}
+
+.indentQtyInput,
+.indentPriceInput {
+  font-size: 13px;
+}
+
+.indentQtyInput::placeholder,
+.indentPriceInput::placeholder {
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .indentGridTwo {
+    grid-template-columns: 1fr;
+  }
+
+  .indentContactsHead,
+  .indentContactsRow,
+  .indentItemsHead,
+  .indentItemsRow {
+    grid-template-columns: 1fr;
+  }
+}

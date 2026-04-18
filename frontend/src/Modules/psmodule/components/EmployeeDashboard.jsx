@@ -56,7 +56,7 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
 
   return (
     <div className="card">
-      <h2>My indents</h2>
+      <h2 style={{ color: '#000000' }}>My Indents</h2>
       <div className="row">
         <button className={filter === 'ALL' ? 'chip active' : 'chip'} onClick={() => setFilter('ALL')}>
           All ({counts.ALL || 0})

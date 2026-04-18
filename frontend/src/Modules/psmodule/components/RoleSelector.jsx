@@ -21,9 +21,6 @@ export default function RoleSelector({ role, setRole, allowedRoles }) {
           ))}
         </select>
       </div>
-      <div className="muted small">
-        Sent as <code>X-Acting-Role</code> header (RBAC enforced server-side).
-      </div>
     </div>
   );
 }

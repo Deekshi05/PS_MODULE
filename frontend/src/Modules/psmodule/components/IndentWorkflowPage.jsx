@@ -102,9 +102,6 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
               </Link>
             ) : null}
             <RoleSelector role={actingRole} setRole={onSetRole} allowedRoles={allowedRoles} />
-            <a className="link small" href="/workflow-reference.png" target="_blank" rel="noreferrer">
-              Workflow reference
-            </a>
             <button
               className="btn ghost"
               type="button"
