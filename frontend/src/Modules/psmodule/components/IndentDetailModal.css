@@ -13,9 +13,9 @@
 .indentDetailPanel {
   width: min(720px, 100%);
   margin-bottom: 48px;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  border-radius: 18px;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.26);
   padding: 20px 22px;
 }
 
@@ -30,6 +30,95 @@
 .indentDetailHead h3 {
   margin: 0;
   font-size: 1.15rem;
+}
+
+.indentDetailMeta {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.indentDetailHero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(37, 99, 235, 0.05);
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  margin-bottom: 16px;
+}
+
+.heroValue {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.timelineBlock {
+  padding: 16px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 16px;
+}
+
+.timelineHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.timelineHead h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.timelineList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timelineItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.timelineItem.done {
+  background: rgba(21, 128, 61, 0.08);
+  color: #166534;
+  border-color: rgba(21, 128, 61, 0.15);
+}
+
+.timelineItem.current {
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.18);
+}
+
+.timelineItem.upcoming {
+  opacity: 0.75;
+}
+
+.timelineDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .indentDetailSection {
@@ -85,6 +174,14 @@
   text-transform: uppercase;
 }
 
+.badge-neutral { border-color: rgba(148, 163, 184, 0.35); background: rgba(148, 163, 184, 0.1); }
+.badge-draft { border-color: rgba(148, 163, 184, 0.35); background: rgba(148, 163, 184, 0.1); }
+.badge-approval { border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.1); }
+.badge-procurement { border-color: rgba(59, 130, 246, 0.35); background: rgba(59, 130, 246, 0.1); }
+.badge-purchased { border-color: rgba(14, 165, 233, 0.35); background: rgba(14, 165, 233, 0.1); }
+.badge-completed { border-color: rgba(21, 128, 61, 0.35); background: rgba(21, 128, 61, 0.1); }
+.badge-rejected { border-color: rgba(220, 38, 38, 0.35); background: rgba(220, 38, 38, 0.1); }
+
 .indentListClickable {
   cursor: pointer;
   border-radius: 8px;
@@ -99,4 +196,15 @@
 .indentListClickable:focus {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .indentDetailHero {
+    grid-template-columns: 1fr;
+  }
+
+  .timelineHead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

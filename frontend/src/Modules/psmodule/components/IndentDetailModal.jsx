@@ -2,6 +2,101 @@ import { useEffect, useState } from 'react';
 import { readIndent } from '../api';
 import './IndentDetailModal.css';
 
+const TRACKERS = {
+  external: ['Submitted', 'HOD', 'Dept Admin', 'Director', 'Registrar', 'PS Admin', 'Purchased', 'Delivered', 'Stocked'],
+  internal: ['Submitted', 'HOD', 'Dept Admin', 'Stock Issued'],
+  rejected: ['Submitted', 'Rejected by HOD'],
+  draft: ['Draft', 'Submitted', 'HOD', 'Dept Admin', 'Director', 'Registrar', 'PS Admin', 'Purchased', 'Delivered', 'Stocked'],
+};
+
+function statusTone(data) {
+  if (!data) return 'neutral';
+  if (data.status === 'DRAFT') return 'draft';
+  if (data.status === 'REJECTED') return 'rejected';
+  if (data.status === 'PURCHASED') return data.delivery_confirmed ? 'completed' : 'purchased';
+  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) return 'completed';
+  if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(data.status)) return 'procurement';
+  if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(data.status)) return 'approval';
+  return 'neutral';
+}
+
+function humanStatus(data) {
+  if (!data) return 'Unknown';
+  if (data.status === 'DRAFT') return 'Draft';
+  if (data.status === 'PURCHASED') return data.delivery_confirmed ? 'Delivered' : 'Awaiting Delivery';
+  if (data.status === 'REJECTED') return 'Rejected';
+  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) return 'Completed';
+  if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(data.status)) return 'In Procurement';
+  if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(data.status)) return 'In Approval';
+  return data.status;
+}
+
+function workflowSteps(data) {
+  if (!data) return TRACKERS.external;
+  if (data.status === 'DRAFT') return TRACKERS.draft;
+  if (data.status === 'REJECTED') return TRACKERS.rejected;
+  if (data.procurement_type === 'INTERNAL' || ['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) {
+    return TRACKERS.internal;
+  }
+  return TRACKERS.external;
+}
+
+function currentStageIndex(data) {
+  if (!data) return 0;
+  if (data.status === 'DRAFT') return 0;
+  if (data.status === 'REJECTED') return 1;
+  if (data.procurement_type === 'INTERNAL' || ['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) {
+    if (data.status === 'STOCKED' || data.status === 'INTERNAL_ISSUED') return 3;
+    if (data.status === 'STOCK_CHECKED') return 2;
+    return 2;
+  }
+  if (data.status === 'PURCHASED') return data.delivery_confirmed ? 7 : 6;
+  if (data.status === 'BIDDING' || data.status === 'EXTERNAL_PROCUREMENT') return 5;
+  if (data.status === 'APPROVED') return 4;
+  if (data.status === 'APPROVED_BY_DEP_ADMIN' || data.status === 'FORWARDED_TO_DIRECTOR') return 3;
+  if (data.status === 'FORWARDED') return 2;
+  if (data.status === 'UNDER_HOD_REVIEW' || data.status === 'SUBMITTED') return 1;
+  return 0;
+}
+
+function Timeline({ data }) {
+  const steps = workflowSteps(data);
+  const current = currentStageIndex(data);
+
+  return (
+    <div className="timelineBlock">
+      <div className="timelineHead">
+        <h4>Workflow timeline</h4>
+        <span className={`badge badge-${statusTone(data)}`}>{humanStatus(data)}</span>
+      </div>
+      <div className="timelineList">
+        {steps.map((step, index) => {
+          const state = index < current ? 'done' : index === current ? 'current' : 'upcoming';
+          return (
+            <div className={`timelineItem ${state}`} key={step}>
+              <span className="timelineDot" />
+              <span>{step}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function summarizeItems(items) {
+  if (!Array.isArray(items) || !items.length) {
+    return { names: 'No items added', count: '0 items' };
+  }
+  const names = items
+    .map((item) => item.item_name || item.item?.name || item.item_description || 'Item')
+    .filter(Boolean);
+  const unique = [...new Set(names)];
+  const preview = unique.slice(0, 3).join(', ');
+  const extra = unique.length > 3 ? ` +${unique.length - 3} more` : '';
+  return { names: `${preview}${extra}`, count: `${items.length} item${items.length === 1 ? '' : 's'}` };
+}
+
 function formatWhen(value) {
   if (!value) return '—';
   try {
@@ -76,12 +171,16 @@ export default function IndentDetailModal({ actingRole, indentId, onClose, onEdi
   const requester =
     data?.requested_by?.username ??
     (data?.requested_by?.employee_id != null ? `Employee #${data.requested_by.employee_id}` : null);
+  const itemSummary = summarizeItems(data?.items);
 
   return (
     <div className="indentDetailOverlay" role="presentation" onClick={onClose}>
       <div className="indentDetailPanel" role="dialog" aria-modal="true" aria-labelledby="indent-detail-title" onClick={(e) => e.stopPropagation()}>
         <div className="indentDetailHead">
-          <h3 id="indent-detail-title">Indent #{indentId}</h3>
+          <div>
+            <h3 id="indent-detail-title">Indent #{indentId}</h3>
+            <div className="indentDetailMeta">{data?.public_reference_id || '—'} · {data?.purpose || 'No purpose provided'}</div>
+          </div>
           <div className="row" style={{ gap: 8 }}>
             {!loading && !error && data?.status === 'DRAFT' && onEditDraft ? (
               <button
@@ -117,9 +216,27 @@ export default function IndentDetailModal({ actingRole, indentId, onClose, onEdi
 
         {!loading && !error && data ? (
           <>
+            <div className="indentDetailHero">
+              <div>
+                <div className="sectionLabel">Status</div>
+                <div className="heroValue">{humanStatus(data)}</div>
+              </div>
+              <div>
+                <div className="sectionLabel">Items</div>
+                <div className="heroValue">{itemSummary.names}</div>
+                <div className="muted small">{itemSummary.count}</div>
+              </div>
+              <div>
+                <div className="sectionLabel">Cost</div>
+                <div className="heroValue">{data.grand_total != null ? `₹${Number(data.grand_total).toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—'}</div>
+              </div>
+            </div>
+
+            <Timeline data={data} />
+
             <DetailDl
               rows={[
-                ['Status', data.status],
+                ['Status', humanStatus(data)],
                 ['Reference', data.public_reference_id],
                 ['Current approver', data.current_approver != null ? `#${data.current_approver}` : '—'],
                 ['Purpose', data.purpose],

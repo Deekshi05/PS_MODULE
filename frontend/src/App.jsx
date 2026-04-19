@@ -108,10 +108,8 @@ function App() {
               </div>
             </div>
             <div className="authCenter">
-              <div className="panel authPanel">
-                <div className="panelBody">
-                  <Login onLoggedIn={() => setAuthed(true)} />
-                </div>
+              <div className="authPanel">
+                <Login onLoggedIn={() => setAuthed(true)} />
               </div>
             </div>
           </div>

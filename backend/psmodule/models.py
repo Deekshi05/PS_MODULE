@@ -1,3 +1,4 @@
+import json
 import secrets
 import string
 
@@ -6,6 +7,37 @@ from django.db import models
 from django.utils import timezone
 
 from psmodule.accounts.models import DepartmentInfo, ExtraInfo
+
+
+class JSONTextField(models.TextField):
+    def from_db_value(self, value, expression, connection):
+        if value in (None, ""):
+            return []
+        if isinstance(value, (list, dict)):
+            return value
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            return []
+
+    def to_python(self, value):
+        if value in (None, ""):
+            return []
+        if isinstance(value, (list, dict)):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError:
+                return []
+        return value
+
+    def get_prep_value(self, value):
+        if value in (None, ""):
+            return "[]"
+        if isinstance(value, str):
+            return value
+        return json.dumps(value)
 
 
 class ActingRole(models.TextChoices):
@@ -108,7 +140,7 @@ class Indent(models.Model):
     )
     date_of_request = models.DateField(default=timezone.localdate)
     designation = models.CharField(max_length=200, blank=True, default="")
-    contacts = models.JSONField(default=list, blank=True)
+    contacts = JSONTextField(default=list, blank=True)
     why_requirement_needed = models.TextField(blank=True, default="")
     urgency_level = models.CharField(
         max_length=20,

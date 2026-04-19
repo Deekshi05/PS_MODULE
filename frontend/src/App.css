@@ -105,6 +105,215 @@ body {
   padding: 18px;
 }
 
+.workspaceBody {
+  display: grid;
+  gap: 14px;
+}
+
+.employeeDashboard {
+  display: grid;
+  gap: 16px;
+}
+
+.roleDashboard {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboardTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.indentCards {
+  display: grid;
+  gap: 14px;
+}
+
+.indentCard {
+  border-radius: 20px;
+  background: #fff;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.indentCard-draft { border-left: 5px solid #94a3b8; background: linear-gradient(180deg, #fff, #f8fafc); }
+.indentCard-approval { border-left: 5px solid #f59e0b; background: linear-gradient(180deg, #fff, rgba(245, 158, 11, 0.05)); }
+.indentCard-procurement { border-left: 5px solid #3b82f6; background: linear-gradient(180deg, #fff, rgba(59, 130, 246, 0.05)); }
+.indentCard-purchased { border-left: 5px solid #0ea5e9; background: linear-gradient(180deg, #fff, rgba(14, 165, 233, 0.05)); }
+.indentCard-completed { border-left: 5px solid #16a34a; background: linear-gradient(180deg, #fff, rgba(22, 163, 74, 0.05)); }
+.indentCard-rejected { border-left: 5px solid #dc2626; background: linear-gradient(180deg, #fff, rgba(220, 38, 38, 0.05)); }
+
+.indentCardBody {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 16px 16px 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.indentCardTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.indentCardTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.indentCardTitle {
+  font-weight: 800;
+  font-size: 1.02rem;
+}
+
+.indentCardMeta {
+  margin-top: 3px;
+}
+
+.stockPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.stockPill.available {
+  background: rgba(21, 128, 61, 0.08);
+  color: #166534;
+}
+
+.stockPill.missing {
+  background: rgba(180, 83, 9, 0.08);
+  color: #92400e;
+}
+
+.indentCardSummary {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.8fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.sectionText {
+  font-weight: 600;
+}
+
+.workflowTracker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.workflowStage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.workflowStage.done {
+  background: rgba(21, 128, 61, 0.08);
+  color: #166534;
+}
+
+.workflowStage.current {
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+}
+
+.workflowStage.upcoming {
+  opacity: 0.72;
+}
+
+.workflowDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.indentCardFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0 16px 16px;
+  margin-top: 12px;
+}
+
+.indentCardActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 0 16px 16px;
+}
+
+.badge-neutral { border-color: rgba(148, 163, 184, 0.4); background: #f8fafc; }
+.badge-draft { border-color: rgba(148, 163, 184, 0.4); background: rgba(148, 163, 184, 0.1); }
+.badge-approval { border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.12); }
+.badge-procurement { border-color: rgba(59, 130, 246, 0.35); background: rgba(59, 130, 246, 0.12); }
+.badge-purchased { border-color: rgba(14, 165, 233, 0.35); background: rgba(14, 165, 233, 0.12); }
+.badge-completed { border-color: rgba(21, 128, 61, 0.35); background: rgba(21, 128, 61, 0.12); }
+.badge-rejected { border-color: rgba(220, 38, 38, 0.35); background: rgba(220, 38, 38, 0.12); }
+
+.btn.success {
+  border-color: rgba(21, 128, 61, 0.35);
+  background: rgba(21, 128, 61, 0.08);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.right {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-direction: column;
+}
+
+@media (max-width: 1100px) {
+  .indentCardSummary {
+    grid-template-columns: 1fr;
+  }
+}
+
 .authCenter {
   min-height: calc(100vh - 56px - 70px);
   display: grid;
@@ -113,6 +322,10 @@ body {
 
 .authPanel {
   width: min(720px, 92vw);
+}
+
+.authPanel .card {
+  margin: 0;
 }
 
 .pageHead {
@@ -327,5 +540,11 @@ select {
   }
   .content {
     padding: 12px;
+  }
+
+  .indentCardTop,
+  .indentCardFooter {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

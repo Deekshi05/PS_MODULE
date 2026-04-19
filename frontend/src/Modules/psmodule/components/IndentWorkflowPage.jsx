@@ -60,7 +60,7 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
   const isEmployee = useMemo(() => actingRole === 'EMPLOYEE', [actingRole]);
   const isPSAdmin = useMemo(() => actingRole === 'PS_ADMIN', [actingRole]);
   const isDepadmin = useMemo(() => actingRole === 'DEPADMIN', [actingRole]);
-  const pageTitle = tab === 'create' ? 'Create Indent' : isEmployee ? 'My Indents' : isPSAdmin ? 'Procurement Management' : 'Approval Queue';
+  const pageTitle = tab === 'create' ? 'Create Indent' : isEmployee ? 'Real Dashboard' : isPSAdmin ? 'Procurement Management' : 'Approval Queue';
 
   return (
     <div className="appShell">
@@ -140,36 +140,34 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
             </div>
           </div>
 
-          <div className="panel">
-            <div className="panelBody">
-              {tab === 'create' ? (
-                <IndentForm
-                  actingRole={actingRole}
-                  draftIndentIdToLoad={draftIndentIdToLoad}
-                  onDraftEditLoaded={clearDraftIndentToLoad}
-                  onCreated={() => {
-                    setRefreshKey((k) => k + 1);
-                    setTab('dashboard');
-                  }}
-                  onDraftSaved={() => setRefreshKey((k) => k + 1)}
-                  onDraftDeleted={() => setRefreshKey((k) => k + 1)}
-                />
-              ) : isEmployee ? (
-                <EmployeeDashboard
-                  actingRole={actingRole}
-                  refreshKey={refreshKey}
-                  onDraftDeleted={() => setRefreshKey((k) => k + 1)}
-                  onEditDraft={(id) => {
-                    setDraftIndentIdToLoad(id);
-                    setTab('create');
-                  }}
-                />
-              ) : isPSAdmin ? (
-                <PSAdminDashboard actingRole={actingRole} refreshKey={refreshKey} />
-              ) : (
-                <HodDashboard actingRole={actingRole} refreshKey={refreshKey} />
-              )}
-            </div>
+          <div className="workspaceBody">
+            {tab === 'create' ? (
+              <IndentForm
+                actingRole={actingRole}
+                draftIndentIdToLoad={draftIndentIdToLoad}
+                onDraftEditLoaded={clearDraftIndentToLoad}
+                onCreated={() => {
+                  setRefreshKey((k) => k + 1);
+                  setTab('dashboard');
+                }}
+                onDraftSaved={() => setRefreshKey((k) => k + 1)}
+                onDraftDeleted={() => setRefreshKey((k) => k + 1)}
+              />
+            ) : isEmployee ? (
+              <EmployeeDashboard
+                actingRole={actingRole}
+                refreshKey={refreshKey}
+                onDraftDeleted={() => setRefreshKey((k) => k + 1)}
+                onEditDraft={(id) => {
+                  setDraftIndentIdToLoad(id);
+                  setTab('create');
+                }}
+              />
+            ) : isPSAdmin ? (
+              <PSAdminDashboard actingRole={actingRole} refreshKey={refreshKey} />
+            ) : (
+              <HodDashboard actingRole={actingRole} refreshKey={refreshKey} />
+            )}
           </div>
         </div>
       </div>
