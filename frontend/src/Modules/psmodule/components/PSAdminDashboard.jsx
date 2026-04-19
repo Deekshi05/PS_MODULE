@@ -275,7 +275,7 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
                     ) : null}
                   </div>
 
-                  {(i._category === 'pending' || i._category === 'bidding' || i._category === 'purchased') ? (
+                  {(['pending', 'bidding', 'purchased'].includes(i._category)) ? (
                     <div style={{ padding: '0 16px 16px' }}>
                       <PSAdminActionBar indent={i} category={i._category} onDone={() => setTick((t) => t + 1)} />
                     </div>

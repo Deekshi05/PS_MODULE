@@ -128,10 +128,19 @@ def get_department_by_code(code: str) -> DepartmentInfo:
 
 def check_stock_availability_for_indent_id(indent_id: int) -> bool:
     """
-    Read-only stock check.
+    Read-only stock check for INTERNAL procurement eligibility.
 
-    Returns True only if, for every indent line, available stock >= requested quantity.
+    Returns True if, for every indent line:
+      - central CurrentStock >= required quantity, OR
+      - department's own Stock has the item with sufficient quantity
+    
+    This allows indents to be marked as INTERNAL if stock is available either
+    centrally or within the requesting department.
     """
+    indent = Indent.objects.filter(id=indent_id).first()
+    if not indent:
+        return False
+    
     lines = list(
         IndentItem.objects.filter(indent_id=indent_id, item_id__isnull=False).values(
             "item_id", "quantity"
@@ -141,16 +150,70 @@ def check_stock_availability_for_indent_id(indent_id: int) -> bool:
         return False
 
     item_ids = [l["item_id"] for l in lines if l["item_id"] is not None]
-    stock_map: Dict[int, int] = dict(
+    
+    # Check central stock
+    central_stock_map: Dict[int, int] = dict(
         CurrentStock.objects.filter(item_id__in=item_ids).values_list(
             "item_id", "quantity"
         )
     )
 
+    # Check department stock (if indent has a department)
+    dept_stock_map: Dict[str, int] = {}
+    if indent.department:
+        from psmodule.department_stock.models import Stock as DepartmentStock
+        
+        dept_code = getattr(indent.department, "code", None)
+        dept_lookup_values = []
+        if dept_code:
+            dept_lookup_values.append(f"dep_{dept_code.lower()}")
+            dept_lookup_values.append(dept_code.lower())
+        dept_lookup_values.append(f"dep_{indent.department.id}")
+        dept_lookup_values.append(str(indent.department.id))
+        
+        dept_stock_qs = DepartmentStock.objects.filter(
+            department__in=[v for v in dept_lookup_values if v]
+        ).values_list("stock_name", "quantity")
+        dept_stock_map = {
+            str(stock_name).strip().lower(): qty for stock_name, qty in dept_stock_qs
+        }
+
+    # Resolve item IDs to item names for department stock lookup
+    from psmodule.models import StoreItem
+    item_name_map = dict(
+        StoreItem.objects.filter(id__in=item_ids).values_list("id", "name")
+    )
+
     for l in lines:
-        available = stock_map.get(l["item_id"], 0)
-        if available < l["quantity"]:
-            return False
+        item_id = l["item_id"]
+        required = l["quantity"]
+        
+        # Check central stock first
+        central_avail = central_stock_map.get(item_id, 0)
+        if central_avail >= required:
+            continue
+        
+        # Check department stock with case-insensitive matching
+        item_name = item_name_map.get(item_id, "")
+        dept_avail = 0
+        if item_name:
+            # Try exact match first
+            dept_avail = dept_stock_map.get(item_name, 0)
+            
+            # If not found, try case-insensitive match
+            if dept_avail == 0:
+                item_name_lower = item_name.lower()
+                for stock_name, qty in dept_stock_map.items():
+                    if stock_name.lower() == item_name_lower:
+                        dept_avail = qty
+                        break
+        
+        if dept_avail >= required:
+            continue
+        
+        # Item not available in either location
+        return False
+    
     return True
 
 
@@ -679,7 +742,19 @@ def create_stock_entry_with_line_map(
         stock, _ = CurrentStock.objects.get_or_create(
             item_id=item_id, defaults={"quantity": 0}
         )
-        stock.quantity += qty
+        quantity_delta = qty
+        if indent.procurement_type == Indent.ProcurementType.INTERNAL:
+            quantity_delta = -qty
+            if stock.quantity < qty:
+                raise ValidationError(
+                    {
+                        "detail": (
+                            f"Insufficient central stock for item_id {item_id} "
+                            f"to complete internal stock entry."
+                        )
+                    }
+                )
+        stock.quantity += quantity_delta
         stock.save(update_fields=["quantity", "updated_at"])
 
     from psmodule.department_stock.selectors import (
@@ -721,7 +796,19 @@ def create_stock_entry_from_indent_items_ps_admin(
         stock, _ = CurrentStock.objects.get_or_create(
             item_id=item_line.item_id, defaults={"quantity": 0}
         )
-        stock.quantity += item_line.quantity
+        quantity_delta = item_line.quantity
+        if indent.procurement_type == Indent.ProcurementType.INTERNAL:
+            quantity_delta = -quantity_delta
+            if stock.quantity < item_line.quantity:
+                raise ValidationError(
+                    {
+                        "detail": (
+                            f"Insufficient central stock for item_id {item_line.item_id} "
+                            f"to complete internal stock entry."
+                        )
+                    }
+                )
+        stock.quantity += quantity_delta
         stock.save(update_fields=["quantity", "updated_at"])
 
     item_map = {
@@ -742,8 +829,14 @@ def create_stock_entry_from_indent_items_ps_admin(
 
 def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, int]:
     """
-    Decrement central CurrentStock for each indent line and mirror quantities into
-    department_stock.Stock. Caller must use transaction.atomic().
+    Allocate items for internal procurement.
+    
+    For each item:
+    - If available in central CurrentStock: decrement it and increment department stock
+    - If available in department's own stock: no decrement needed (already in department)
+    - Otherwise: raise validation error
+    
+    Caller must use transaction.atomic().
     """
     lines = list(indent.items.filter(item_id__isnull=False).select_related("item"))
     if not lines:
@@ -756,29 +849,89 @@ def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, in
         iid = int(line.item_id)
         aggregated[iid] = aggregated.get(iid, 0) + int(line.quantity)
 
+    # Get item ID to name mapping for department stock lookup
+    item_name_map = {line.item_id: line.item.name for line in lines}
+    
+    # Get department code for department stock lookup
+    dept_code = getattr(indent.department, "code", None) or ""
+    dept_stock_map: Dict[str, int] = {}
+    if dept_code:
+        from psmodule.department_stock.models import Stock as DepartmentStock
+        dept_lookup_values = [
+            f"dep_{dept_code.lower()}",
+            dept_code.lower(),
+            f"dep_{indent.department.id}",
+            str(indent.department.id),
+        ]
+        dept_stock_map = {
+            str(stock_name).strip().lower(): qty
+            for stock_name, qty in DepartmentStock.objects.filter(
+                department__in=[v for v in dept_lookup_values if v]
+            ).values_list("stock_name", "quantity")
+        }
+
+    to_decrement_from_central: dict[int, int] = {}
+    
     for item_id, need in aggregated.items():
+        item_name = item_name_map.get(item_id, "")
+        
+        # Check central stock first
+        central_stock = (
+            CurrentStock.objects.select_for_update()
+            .filter(item_id=item_id)
+            .first()
+        )
+        central_avail = central_stock.quantity if central_stock else 0
+        
+        # Resolve department stock by exact and case-insensitive item name
+        dept_avail = 0
+        if item_name:
+            dept_avail = dept_stock_map.get(item_name, 0)
+            if dept_avail == 0:
+                item_name_lower = item_name.lower()
+                for stock_name, qty in dept_stock_map.items():
+                    if stock_name.lower() == item_name_lower:
+                        dept_avail = qty
+                        break
+        
+        if central_avail >= need:
+            # Central has enough: decrement from central
+            to_decrement_from_central[item_id] = need
+        elif dept_avail >= need:
+            # Department has enough: no decrement needed
+            pass
+        else:
+            # Not enough in either location
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"Insufficient stock for item_id {item_id} (need {need}, "
+                        f"central: {central_avail}, department: {dept_avail})."
+                    )
+                }
+            )
+    
+    # Only decrement from central if we found stock there
+    for item_id, need in to_decrement_from_central.items():
         stock = (
             CurrentStock.objects.select_for_update()
             .filter(item_id=item_id)
             .first()
         )
-        if not stock or stock.quantity < need:
-            raise ValidationError(
-                {
-                    "detail": f"Insufficient central stock for item_id {item_id} (need {need})."
-                }
-            )
-        stock.quantity -= need
-        stock.save(update_fields=["quantity", "updated_at"])
+        if stock:
+            stock.quantity -= need
+            stock.save(update_fields=["quantity", "updated_at"])
 
-    from psmodule.department_stock.selectors import (
-        apply_received_quantities_to_department_stock,
-    )
-
-    apply_received_quantities_to_department_stock(
-        getattr(indent.department, "code", None) or "",
-        aggregated,
-    )
+    # Increment department stock for items that came from central
+    if to_decrement_from_central:
+        from psmodule.department_stock.selectors import (
+            apply_received_quantities_to_department_stock,
+        )
+        apply_received_quantities_to_department_stock(
+            dept_code,
+            to_decrement_from_central,
+        )
+    
     return aggregated
 
 

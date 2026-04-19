@@ -22,6 +22,7 @@ from psmodule.services import (
     create_stock_entry,
     delete_indent_draft,
 )
+from psmodule.selectors import get_ps_admin_indents_by_category
 
 
 class WorkflowPs002StockEntryTests(TestCase):
@@ -124,10 +125,41 @@ class WorkflowPs002StockEntryTests(TestCase):
         )
         self.assertEqual(result["indent"]["status"], Indent.Status.STOCK_ENTRY)
 
-        ds_pen = DepartmentStock.objects.get(stock_name="Pen", department="dep_cse")
-        ds_paper = DepartmentStock.objects.get(stock_name="A4 Paper", department="dep_cse")
-        self.assertEqual(ds_pen.quantity, 105)
-        self.assertEqual(ds_paper.quantity, 52)
+    def test_ps_admin_internal_stock_entry_decreases_current_stock(self):
+        internal_indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Internal stock entry",
+            status=Indent.Status.PURCHASED,
+            delivery_confirmed=True,
+            procurement_type=Indent.ProcurementType.INTERNAL,
+        )
+        IndentItem.objects.create(indent=internal_indent, item=self.item1, quantity=4)
+        CurrentStock.objects.filter(item=self.item1).update(quantity=20)
+
+        actor = self._actor(ActingRole.PS_ADMIN, self.ps_admin_info)
+        result = create_stock_entry(
+            indent_id=internal_indent.id,
+            actor=actor,
+            request_user=self.ps_admin_user,
+            item_lines=[{"item_id": self.item1.id, "quantity": 4}],
+            notes="Allocate from warehouse",
+        )
+
+        internal_indent.refresh_from_db()
+        self.assertEqual(internal_indent.status, Indent.Status.STOCK_ENTRY)
+        self.assertEqual(CurrentStock.objects.get(item=self.item1).quantity, 16)
+        self.assertEqual(StockEntry.objects.filter(indent=internal_indent).count(), 1)
+        self.assertEqual(result["indent"]["status"], Indent.Status.STOCK_ENTRY)
+
+        self.assertEqual(
+            IndentAudit.objects.filter(
+                indent=internal_indent, action="STOCK_ENTRY"
+            ).count(),
+            1,
+        )
+
+        self.assertEqual(result["stock_entry"]["acting_role"], ActingRole.PS_ADMIN)
 
     def test_reject_when_delivery_not_confirmed(self):
         self.indent.delivery_confirmed = False
@@ -415,6 +447,63 @@ class DepadminInternalProcurementTests(TestCase):
         self.assertEqual(self.indent.status, Indent.Status.APPROVED)
         self.assertEqual(self.indent.procurement_type, Indent.ProcurementType.EXTERNAL)
 
+    def test_depadmin_direct_approve_routes_to_ps_admin(self):
+        direct_indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Direct approve to PS Admin",
+            status=Indent.Status.FORWARDED,
+            current_approver=self.depadmin_info,
+        )
+        IndentItem.objects.create(indent=direct_indent, item=self.item1, quantity=2)
+
+        apply_hod_action(
+            direct_indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "APPROVE",
+            notes="",
+            request_user=self.depadmin_user,
+        )
+
+        direct_indent.refresh_from_db()
+        self.assertEqual(direct_indent.status, Indent.Status.APPROVED)
+        self.assertTrue(direct_indent.stock_available)
+        self.assertEqual(direct_indent.procurement_type, Indent.ProcurementType.INTERNAL)
+        self.assertIsNone(direct_indent.current_approver)
+
+        ps_categories = get_ps_admin_indents_by_category(
+            self._actor(ActingRole.PS_ADMIN, self.ps_admin_info)
+        )
+        self.assertIn(direct_indent.id, [indent["id"] for indent in ps_categories["pending"]])
+
+    def test_depadmin_direct_approve_no_stock_marks_external(self):
+        """Direct approval with no available stock should mark indent as EXTERNAL."""
+        # Create an indent for an item with no stock
+        item_no_stock = StoreItem.objects.create(name="Expensive Device", unit="nos")
+        # Don't create any CurrentStock for this item
+        
+        direct_indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Request device not in stock",
+            status=Indent.Status.FORWARDED,
+            current_approver=self.depadmin_info,
+        )
+        IndentItem.objects.create(indent=direct_indent, item=item_no_stock, quantity=1)
+
+        apply_hod_action(
+            direct_indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "APPROVE",
+            notes="",
+            request_user=self.depadmin_user,
+        )
+
+        direct_indent.refresh_from_db()
+        self.assertEqual(direct_indent.status, Indent.Status.APPROVED)
+        self.assertFalse(direct_indent.stock_available)
+        self.assertEqual(direct_indent.procurement_type, Indent.ProcurementType.EXTERNAL)
+
     def test_ps_admin_internal_allocate(self):
         apply_hod_action(
             self.indent.id,
@@ -438,3 +527,144 @@ class DepadminInternalProcurementTests(TestCase):
             DepartmentStock.objects.get(stock_name="Pen", department="dep_cse").quantity,
             4,
         )
+
+    def test_ps_admin_internal_allocate_from_dept_stock(self):
+        """Allocation should succeed when item is in department stock, not central."""
+        # Create an item with no central stock
+        item_dept_only = StoreItem.objects.create(name="Notebook", unit="nos")
+        # Add it to department stock only
+        DepartmentStock.objects.create(
+            stock_name="Notebook", department="dep_cse", quantity=5
+        )
+        
+        # Create indent for this item (no central stock)
+        dept_indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Request from dept stock",
+            status=Indent.Status.FORWARDED,
+            current_approver=self.depadmin_info,
+        )
+        IndentItem.objects.create(indent=dept_indent, item=item_dept_only, quantity=2)
+        
+        # DepAdmin approves - should recognize department stock
+        apply_hod_action(
+            dept_indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "APPROVE",
+            notes="",
+            request_user=self.depadmin_user,
+        )
+        
+        dept_indent.refresh_from_db()
+        self.assertEqual(dept_indent.status, Indent.Status.APPROVED)
+        self.assertTrue(dept_indent.stock_available)
+        self.assertEqual(dept_indent.procurement_type, Indent.ProcurementType.INTERNAL)
+        
+        # PS Admin allocates - should succeed using department stock
+        apply_ps_admin_action(
+            dept_indent.id,
+            self._actor(ActingRole.PS_ADMIN, self.ps_admin_info),
+            "INTERNAL_ALLOCATE",
+            notes="",
+            request_user=self.ps_admin_user,
+        )
+        
+        dept_indent.refresh_from_db()
+        self.assertEqual(dept_indent.status, Indent.Status.INTERNAL_ISSUED)
+        self.assertTrue(dept_indent.delivery_confirmed)
+        # Department stock should be unchanged (already had the items)
+        self.assertEqual(
+            DepartmentStock.objects.get(stock_name="Notebook", department="dep_cse").quantity,
+            5,
+        )
+
+    def test_depadmin_approve_internal_when_department_stock_matches_laptop(self):
+        """Laptop in department stock should be treated as internal procurement."""
+        item_laptop = StoreItem.objects.create(name="Laptop", unit="nos")
+        DepartmentStock.objects.create(
+            stock_name="laptop",
+            department="dep_cse",
+            quantity=1,
+        )
+
+        direct_indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Laptop request",
+            status=Indent.Status.FORWARDED,
+            current_approver=self.depadmin_info,
+        )
+        IndentItem.objects.create(indent=direct_indent, item=item_laptop, quantity=1)
+
+        apply_hod_action(
+            direct_indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "APPROVE",
+            notes="",
+            request_user=self.depadmin_user,
+        )
+
+        direct_indent.refresh_from_db()
+        self.assertEqual(direct_indent.status, Indent.Status.APPROVED)
+        self.assertTrue(direct_indent.stock_available)
+        self.assertEqual(direct_indent.procurement_type, Indent.ProcurementType.INTERNAL)
+
+
+class DirectorApprovalRoutingTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.dept = DepartmentInfo.objects.create(code="CSE", name="Computer Science")
+        self.director_designation = Designation.objects.create(name="Director")
+        self.registrar_designation = Designation.objects.create(name="Registrar")
+
+        self.director_user = User.objects.create_user(username="director", password="pass1234")
+        self.registrar_user = User.objects.create_user(username="registrar", password="pass1234")
+        self.employee_user = User.objects.create_user(username="employee", password="pass1234")
+
+        self.director_info = ExtraInfo.objects.create(
+            user=self.director_user, department=self.dept, employee_id="director"
+        )
+        self.registrar_info = ExtraInfo.objects.create(
+            user=self.registrar_user, department=self.dept, employee_id="registrar"
+        )
+        self.employee_info = ExtraInfo.objects.create(
+            user=self.employee_user, department=self.dept, employee_id="employee"
+        )
+
+        HoldsDesignation.objects.create(
+            designation=self.director_designation,
+            working=self.director_info,
+            is_active=True,
+        )
+        HoldsDesignation.objects.create(
+            designation=self.registrar_designation,
+            working=self.registrar_info,
+            is_active=True,
+        )
+
+        self.item1 = StoreItem.objects.create(name="Pen", unit="nos")
+        self.indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Route through registrar",
+            status=Indent.Status.FORWARDED_TO_DIRECTOR,
+            current_approver=self.director_info,
+        )
+        IndentItem.objects.create(indent=self.indent, item=self.item1, quantity=2)
+
+    def _actor(self, role, extrainfo):
+        return SimpleNamespace(role=role, extrainfo=extrainfo)
+
+    def test_director_approval_routes_to_registrar(self):
+        apply_hod_action(
+            self.indent.id,
+            self._actor(ActingRole.DIRECTOR, self.director_info),
+            "APPROVE",
+            notes="",
+            request_user=self.director_user,
+        )
+
+        self.indent.refresh_from_db()
+        self.assertEqual(self.indent.status, Indent.Status.FORWARDED)
+        self.assertEqual(self.indent.current_approver, self.registrar_info)

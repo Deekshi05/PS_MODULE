@@ -290,27 +290,46 @@ def apply_hod_action(
 
     if action_name == "APPROVE":
         if actor.role == ActingRole.DEPADMIN:
-            if indent.status != Indent.Status.STOCK_CHECKED:
+            if indent.status not in (
+                Indent.Status.FORWARDED,
+                Indent.Status.STOCK_CHECKED,
+            ):
                 raise ValidationError(
-                    {"detail": "Please check stock before approving."}
+                    {
+                        "detail": (
+                            "Only forwarded or stock-checked indents can be approved."
+                        )
+                    }
                 )
-            if indent.stock_available:
-                # Internal procurement → PS Admin allocates from central stock.
-                indent.status = Indent.Status.APPROVED
-                indent.procurement_type = Indent.ProcurementType.INTERNAL
-                indent.current_approver = None
-                save_indent(
-                    indent,
-                    ["status", "procurement_type", "current_approver", "updated_at"],
-                )
+
+            if indent.status == Indent.Status.STOCK_CHECKED:
+                if indent.stock_available:
+                    indent.procurement_type = Indent.ProcurementType.INTERNAL
+                else:
+                    indent.procurement_type = Indent.ProcurementType.EXTERNAL
             else:
-                # External → PS Admin pending (procurement_type EXTERNAL from stock check).
-                indent.status = Indent.Status.APPROVED
-                indent.current_approver = None
-                save_indent(
-                    indent,
-                    ["status", "current_approver", "updated_at"],
+                # Direct approval from FORWARDED: check if stock actually exists
+                from psmodule.selectors import check_stock_availability_for_indent_id
+                stock_exists = check_stock_availability_for_indent_id(indent.id)
+                indent.stock_available = stock_exists
+                indent.procurement_type = (
+                    Indent.ProcurementType.INTERNAL
+                    if stock_exists
+                    else Indent.ProcurementType.EXTERNAL
                 )
+
+            indent.status = Indent.Status.APPROVED
+            indent.current_approver = None
+            save_indent(
+                indent,
+                [
+                    "status",
+                    "stock_available",
+                    "procurement_type",
+                    "current_approver",
+                    "updated_at",
+                ],
+            )
 
         elif actor.role == ActingRole.HOD:
             next_approver = get_department_depadmin(indent.department)
@@ -322,7 +341,15 @@ def apply_hod_action(
             indent.status = Indent.Status.FORWARDED
             save_indent(indent, ["status", "current_approver", "updated_at"])
 
-        elif actor.role in (ActingRole.REGISTRAR, ActingRole.DIRECTOR):
+        elif actor.role == ActingRole.DIRECTOR:
+            next_approver = get_first_holder_by_designation("registrar")
+            if not next_approver:
+                raise ValidationError({"detail": "No Registrar found to route to."})
+            indent.current_approver = next_approver
+            indent.status = Indent.Status.FORWARDED
+            save_indent(indent, ["status", "current_approver", "updated_at"])
+
+        elif actor.role == ActingRole.REGISTRAR:
             indent.status = Indent.Status.APPROVED
             indent.current_approver = None
             save_indent(indent, ["status", "current_approver", "updated_at"])
