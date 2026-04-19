@@ -90,3 +90,39 @@ def create_transfer_log(
         to_department=to_department,
         approved_by=approved_by,
     )
+
+
+def apply_received_quantities_to_department_stock(
+    department_code: str | None,
+    item_quantities: dict[int, int],
+) -> None:
+    """
+    When central-store stock entry receives goods for an indent, mirror quantities
+    into department_stock.Stock for that indent's department (same keys as transfer
+    flow: department ``dep_{code.lower()}``, stock_name = StoreItem.name).
+    """
+    if not department_code or not item_quantities:
+        return
+
+    from psmodule.models import StoreItem
+
+    code = str(department_code).strip().lower()
+    if not code:
+        return
+
+    dept_key = f"dep_{code}"
+    positive = {int(i): int(q) for i, q in item_quantities.items() if int(q) > 0}
+    if not positive:
+        return
+
+    item_ids = list(positive.keys())
+    id_to_name = dict(StoreItem.objects.filter(pk__in=item_ids).values_list("id", "name"))
+
+    for item_id, qty in positive.items():
+        raw = id_to_name.get(item_id) or f"Item {item_id}"
+        stock_name = str(raw).strip()[:255] or f"Item {item_id}"
+        increment_destination_stock(
+            stock_name=stock_name,
+            department=dept_key,
+            quantity=qty,
+        )

@@ -14,6 +14,7 @@ from psmodule.models import (
     StockEntry,
     StoreItem,
 )
+from psmodule.department_stock.models import Stock as DepartmentStock
 from psmodule.services import confirm_delivery, create_stock_entry, delete_indent_draft
 
 
@@ -73,6 +74,13 @@ class WorkflowPs002StockEntryTests(TestCase):
         IndentItem.objects.create(indent=self.indent, item=self.item1, quantity=5)
         IndentItem.objects.create(indent=self.indent, item=self.item2, quantity=2)
 
+        DepartmentStock.objects.create(
+            stock_name="Pen", department="dep_cse", quantity=100
+        )
+        DepartmentStock.objects.create(
+            stock_name="A4 Paper", department="dep_cse", quantity=50
+        )
+
     def _actor(self, role, extrainfo):
         return SimpleNamespace(role=role, extrainfo=extrainfo)
 
@@ -109,6 +117,11 @@ class WorkflowPs002StockEntryTests(TestCase):
             1,
         )
         self.assertEqual(result["indent"]["status"], Indent.Status.STOCK_ENTRY)
+
+        ds_pen = DepartmentStock.objects.get(stock_name="Pen", department="dep_cse")
+        ds_paper = DepartmentStock.objects.get(stock_name="A4 Paper", department="dep_cse")
+        self.assertEqual(ds_pen.quantity, 105)
+        self.assertEqual(ds_paper.quantity, 52)
 
     def test_reject_when_delivery_not_confirmed(self):
         self.indent.delivery_confirmed = False

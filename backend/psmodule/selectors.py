@@ -639,7 +639,7 @@ def create_indent_audit_event(
 
 
 def get_indent_by_id(indent_id: int) -> Indent:
-    return Indent.objects.get(id=indent_id)
+    return Indent.objects.select_related("department").get(id=indent_id)
 
 
 def get_indent_for_delivery_confirmation(indent_id: int, extrainfo) -> Optional[Indent]:
@@ -673,6 +673,15 @@ def create_stock_entry_with_line_map(
         )
         stock.quantity += qty
         stock.save(update_fields=["quantity", "updated_at"])
+
+    from psmodule.department_stock.selectors import (
+        apply_received_quantities_to_department_stock,
+    )
+
+    apply_received_quantities_to_department_stock(
+        getattr(indent.department, "code", None) or "",
+        payload_map,
+    )
     return entry
 
 
@@ -706,6 +715,20 @@ def create_stock_entry_from_indent_items_ps_admin(
         )
         stock.quantity += item_line.quantity
         stock.save(update_fields=["quantity", "updated_at"])
+
+    item_map = {
+        int(line.item_id): int(line.quantity)
+        for line in indent.items.all()
+        if line.item_id is not None
+    }
+    from psmodule.department_stock.selectors import (
+        apply_received_quantities_to_department_stock,
+    )
+
+    apply_received_quantities_to_department_stock(
+        getattr(indent.department, "code", None) or "",
+        item_map,
+    )
     return entry
 
 
