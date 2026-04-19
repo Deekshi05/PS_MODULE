@@ -27,6 +27,7 @@ from psmodule.selectors import (
     get_indent_for_hod_action,
     get_indent_for_stock_check,
     get_indent_for_stock_entry,
+    internal_allocate_from_central_to_department,
     replace_indent_line_items,
     save_indent,
     validate_store_item_ids,
@@ -293,13 +294,23 @@ def apply_hod_action(
                 raise ValidationError(
                     {"detail": "Please check stock before approving."}
                 )
-            indent.status = (
-                Indent.Status.INTERNAL_ISSUED
-                if indent.stock_available
-                else Indent.Status.EXTERNAL_PROCUREMENT
-            )
-            indent.current_approver = None
-            save_indent(indent, ["status", "current_approver", "updated_at"])
+            if indent.stock_available:
+                # Internal procurement → PS Admin allocates from central stock.
+                indent.status = Indent.Status.APPROVED
+                indent.procurement_type = Indent.ProcurementType.INTERNAL
+                indent.current_approver = None
+                save_indent(
+                    indent,
+                    ["status", "procurement_type", "current_approver", "updated_at"],
+                )
+            else:
+                # External → PS Admin pending (procurement_type EXTERNAL from stock check).
+                indent.status = Indent.Status.APPROVED
+                indent.current_approver = None
+                save_indent(
+                    indent,
+                    ["status", "current_approver", "updated_at"],
+                )
 
         elif actor.role == ActingRole.HOD:
             next_approver = get_department_depadmin(indent.department)
@@ -508,6 +519,37 @@ def apply_ps_admin_action(
             indent.status = Indent.Status.STOCK_ENTRY
             indent.current_approver = None
             save_indent(indent, ["status", "current_approver", "updated_at"])
+
+    elif action_name == "INTERNAL_ALLOCATE":
+        if indent.status != Indent.Status.APPROVED:
+            raise ValidationError(
+                {"detail": "Only APPROVED indents can be allocated from central stock."}
+            )
+        if indent.procurement_type != Indent.ProcurementType.INTERNAL:
+            raise ValidationError(
+                {
+                    "detail": "Only internal procurement indents can use this action."
+                }
+            )
+        if not indent.stock_available:
+            raise ValidationError(
+                {"detail": "Stock is not marked available for this indent."}
+            )
+
+        with transaction.atomic():
+            internal_allocate_from_central_to_department(indent)
+            indent.status = Indent.Status.INTERNAL_ISSUED
+            indent.delivery_confirmed = True
+            indent.current_approver = None
+            save_indent(
+                indent,
+                [
+                    "status",
+                    "delivery_confirmed",
+                    "current_approver",
+                    "updated_at",
+                ],
+            )
 
     else:
         raise ValidationError({"action": "Invalid action"})

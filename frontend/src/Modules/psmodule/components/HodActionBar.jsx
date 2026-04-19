@@ -9,8 +9,11 @@ export default function HodActionBar({ actingRole, indent, onDone, mode = 'PENDI
   const [loadingBreakdown, setLoadingBreakdown] = useState(false);
   const canApprove = ['DEPADMIN', 'HOD', 'REGISTRAR', 'DIRECTOR'].includes(actingRole) && mode === 'PENDING';
   const canCheckStock = actingRole === 'DEPADMIN' && mode === 'PENDING';
+  // Must match backend get_indent_for_stock_entry: PURCHASED + delivery confirmed only.
   const canCreateStockEntry =
-    ['DEPADMIN', 'PS_ADMIN'].includes(actingRole) && ['EXTERNAL_PROCUREMENT', 'APPROVED'].includes(indent.status);
+    ['DEPADMIN', 'PS_ADMIN'].includes(actingRole) &&
+    indent.status === 'PURCHASED' &&
+    Boolean(indent.delivery_confirmed);
 
   async function doAction(action) {
     setError('');
@@ -110,10 +113,12 @@ export default function HodActionBar({ actingRole, indent, onDone, mode = 'PENDI
               setError('');
               setLoading(true);
               try {
-                const items = (indent.items || []).map((line) => ({
-                  item_id: line.item.id,
-                  quantity: line.quantity,
-                }));
+                const items = (indent.items || [])
+                  .filter((line) => line.item?.id != null || line.item_id != null)
+                  .map((line) => ({
+                    item_id: line.item?.id ?? line.item_id,
+                    quantity: line.quantity,
+                  }));
                 await writeCreateStockEntry({ actingRole, indentId: indent.id, payload: { notes, items } });
                 setNotes('');
                 onDone?.();

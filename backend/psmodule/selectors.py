@@ -413,6 +413,14 @@ def get_procurement_ready_indents_for_actor_data(actor, *, request=None) -> List
             "Only DepAdmin/PS Admin can view procurement-ready indents."
         )
 
+    # PS Admin: APPROVED (pending PS workflow) + legacy EXTERNAL_PROCUREMENT.
+    # DepAdmin: only EXTERNAL_PROCUREMENT — APPROVED indents are already routed to PS Admin.
+    status_in = (
+        [Indent.Status.EXTERNAL_PROCUREMENT, Indent.Status.APPROVED]
+        if actor.role == ActingRole.PS_ADMIN
+        else [Indent.Status.EXTERNAL_PROCUREMENT]
+    )
+
     qs = (
         Indent.objects.select_related(
             "indenter",
@@ -422,7 +430,7 @@ def get_procurement_ready_indents_for_actor_data(actor, *, request=None) -> List
             "current_approver__user",
         )
         .prefetch_related("items__item", "documents")
-        .filter(status__in=[Indent.Status.EXTERNAL_PROCUREMENT, Indent.Status.APPROVED])
+        .filter(status__in=status_in)
     )
 
     if actor.role == ActingRole.DEPADMIN:
@@ -730,6 +738,48 @@ def create_stock_entry_from_indent_items_ps_admin(
         item_map,
     )
     return entry
+
+
+def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, int]:
+    """
+    Decrement central CurrentStock for each indent line and mirror quantities into
+    department_stock.Stock. Caller must use transaction.atomic().
+    """
+    lines = list(indent.items.filter(item_id__isnull=False).select_related("item"))
+    if not lines:
+        raise ValidationError(
+            {"detail": "Indent has no catalog lines to allocate from central stock."}
+        )
+
+    aggregated: dict[int, int] = {}
+    for line in lines:
+        iid = int(line.item_id)
+        aggregated[iid] = aggregated.get(iid, 0) + int(line.quantity)
+
+    for item_id, need in aggregated.items():
+        stock = (
+            CurrentStock.objects.select_for_update()
+            .filter(item_id=item_id)
+            .first()
+        )
+        if not stock or stock.quantity < need:
+            raise ValidationError(
+                {
+                    "detail": f"Insufficient central stock for item_id {item_id} (need {need})."
+                }
+            )
+        stock.quantity -= need
+        stock.save(update_fields=["quantity", "updated_at"])
+
+    from psmodule.department_stock.selectors import (
+        apply_received_quantities_to_department_stock,
+    )
+
+    apply_received_quantities_to_department_stock(
+        getattr(indent.department, "code", None) or "",
+        aggregated,
+    )
+    return aggregated
 
 
 def save_indent(indent: Indent, update_fields: list[str]) -> None:

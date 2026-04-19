@@ -318,7 +318,9 @@ class StockEntryCreateSerializer(serializers.Serializer):
 
 
 class PSAdminActionSerializer(serializers.Serializer):
-    action = serializers.ChoiceField(choices=["BIDDING", "PURCHASE", "STOCK_ENTRY"])
+    action = serializers.ChoiceField(
+        choices=["BIDDING", "PURCHASE", "STOCK_ENTRY", "INTERNAL_ALLOCATE"]
+    )
     notes = serializers.CharField(required=False, allow_blank=True)
 
 

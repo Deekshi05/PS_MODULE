@@ -15,7 +15,13 @@ from psmodule.models import (
     StoreItem,
 )
 from psmodule.department_stock.models import Stock as DepartmentStock
-from psmodule.services import confirm_delivery, create_stock_entry, delete_indent_draft
+from psmodule.services import (
+    apply_hod_action,
+    apply_ps_admin_action,
+    confirm_delivery,
+    create_stock_entry,
+    delete_indent_draft,
+)
 
 
 class WorkflowPs002StockEntryTests(TestCase):
@@ -329,3 +335,106 @@ class DeleteDraftIndentTests(TestCase):
         actor = self._actor(ActingRole.EMPLOYEE, self.other_info)
         with self.assertRaises(ValidationError):
             delete_indent_draft(self.draft.id, actor, self.other_user)
+
+
+class DepadminInternalProcurementTests(TestCase):
+    """DepAdmin approve with stock → APPROVED INTERNAL; PS Admin INTERNAL_ALLOCATE completes."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.dept = DepartmentInfo.objects.create(code="CSE", name="Computer Science")
+        self.depadmin_designation = Designation.objects.create(name="DepAdmin CSE")
+        self.ps_admin_designation = Designation.objects.create(name="PS Admin")
+        self.depadmin_user = User.objects.create_user(username="da_int", password="pass1234")
+        self.ps_admin_user = User.objects.create_user(username="ps_int", password="pass1234")
+        self.employee_user = User.objects.create_user(username="emp_int", password="pass1234")
+        self.depadmin_info = ExtraInfo.objects.create(
+            user=self.depadmin_user, department=self.dept, employee_id="da_int"
+        )
+        self.ps_admin_info = ExtraInfo.objects.create(
+            user=self.ps_admin_user, department=self.dept, employee_id="ps_int"
+        )
+        self.employee_info = ExtraInfo.objects.create(
+            user=self.employee_user, department=self.dept, employee_id="emp_int"
+        )
+        HoldsDesignation.objects.create(
+            designation=self.depadmin_designation,
+            working=self.depadmin_info,
+            is_active=True,
+        )
+        HoldsDesignation.objects.create(
+            designation=self.ps_admin_designation,
+            working=self.ps_admin_info,
+            is_active=True,
+        )
+        self.item1 = StoreItem.objects.create(name="Pen", unit="nos")
+        CurrentStock.objects.create(item=self.item1, quantity=20)
+        self.indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Internal procurement",
+            status=Indent.Status.STOCK_CHECKED,
+            stock_available=True,
+            procurement_type=Indent.ProcurementType.INTERNAL,
+            current_approver=self.depadmin_info,
+        )
+        IndentItem.objects.create(indent=self.indent, item=self.item1, quantity=3)
+        DepartmentStock.objects.create(
+            stock_name="Pen", department="dep_cse", quantity=1
+        )
+
+    def _actor(self, role, extrainfo):
+        return SimpleNamespace(role=role, extrainfo=extrainfo)
+
+    def test_depadmin_approve_internal_sets_approved_and_internal_type(self):
+        apply_hod_action(
+            self.indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "APPROVE",
+            notes="",
+            request_user=self.depadmin_user,
+        )
+        self.indent.refresh_from_db()
+        self.assertEqual(self.indent.status, Indent.Status.APPROVED)
+        self.assertEqual(self.indent.procurement_type, Indent.ProcurementType.INTERNAL)
+
+    def test_depadmin_approve_external_stock_sets_approved(self):
+        self.indent.stock_available = False
+        self.indent.procurement_type = Indent.ProcurementType.EXTERNAL
+        self.indent.save(
+            update_fields=["stock_available", "procurement_type", "updated_at"]
+        )
+        apply_hod_action(
+            self.indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "APPROVE",
+            notes="",
+            request_user=self.depadmin_user,
+        )
+        self.indent.refresh_from_db()
+        self.assertEqual(self.indent.status, Indent.Status.APPROVED)
+        self.assertEqual(self.indent.procurement_type, Indent.ProcurementType.EXTERNAL)
+
+    def test_ps_admin_internal_allocate(self):
+        apply_hod_action(
+            self.indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "APPROVE",
+            notes="",
+            request_user=self.depadmin_user,
+        )
+        apply_ps_admin_action(
+            self.indent.id,
+            self._actor(ActingRole.PS_ADMIN, self.ps_admin_info),
+            "INTERNAL_ALLOCATE",
+            notes="",
+            request_user=self.ps_admin_user,
+        )
+        self.indent.refresh_from_db()
+        self.assertEqual(self.indent.status, Indent.Status.INTERNAL_ISSUED)
+        self.assertTrue(self.indent.delivery_confirmed)
+        self.assertEqual(CurrentStock.objects.get(item=self.item1).quantity, 17)
+        self.assertEqual(
+            DepartmentStock.objects.get(stock_name="Pen", department="dep_cse").quantity,
+            4,
+        )
