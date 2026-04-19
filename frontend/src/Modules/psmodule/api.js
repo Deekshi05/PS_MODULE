@@ -105,6 +105,15 @@ export async function writeUpdateIndentDraft({ actingRole, indentId, payload }) 
   }
 }
 
+/** Permanently delete a draft indent (DELETE). Employee owner, DRAFT status only. */
+export async function writeDeleteIndentDraft({ actingRole, indentId }) {
+  try {
+    await client.delete(`/ps/api/indents/${indentId}/`, { headers: authHeaders(actingRole) });
+  } catch (err) {
+    throwAxiosError(err);
+  }
+}
+
 /** Submit a previously saved draft (POST). */
 export async function writeSubmitIndentDraft({ actingRole, indentId }) {
   try {

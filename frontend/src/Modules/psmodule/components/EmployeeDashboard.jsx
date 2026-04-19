@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { readIndents, writeConfirmDelivery } from '../api';
+import { readIndents, writeConfirmDelivery, writeDeleteIndentDraft } from '../api';
 import IndentDetailModal from './IndentDetailModal';
 
-export default function EmployeeDashboard({ actingRole, refreshKey }) {
+export default function EmployeeDashboard({ actingRole, refreshKey, onEditDraft, onDraftDeleted }) {
   const [indents, setIndents] = useState([]);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('ALL');
   const [actionError, setActionError] = useState('');
   const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [deleteLoadingId, setDeleteLoadingId] = useState(null);
   const [detailId, setDetailId] = useState(null);
 
   useEffect(() => {
@@ -42,6 +43,25 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
 
   const visible = filter === 'ALL' ? indents : indents.filter((i) => i.status === filter);
 
+  async function handleDeleteDraft(indentId) {
+    if (!window.confirm('Delete this draft permanently? This cannot be undone.')) {
+      return;
+    }
+    setActionError('');
+    setDeleteLoadingId(indentId);
+    try {
+      await writeDeleteIndentDraft({ actingRole, indentId });
+      const data = await readIndents({ actingRole });
+      setIndents(data);
+      setDetailId((current) => (current === indentId ? null : current));
+      onDraftDeleted?.();
+    } catch (err) {
+      setActionError(err.message || 'Failed to delete draft');
+    } finally {
+      setDeleteLoadingId(null);
+    }
+  }
+
   async function handleConfirmDelivery(indentId) {
     setActionError('');
     setActionLoadingId(indentId);
@@ -63,7 +83,7 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
         <button className={filter === 'ALL' ? 'chip active' : 'chip'} onClick={() => setFilter('ALL')}>
           All ({counts.ALL || 0})
         </button>
-        {['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'APPROVED', 'BIDDING', 'PURCHASED', 'STOCK_ENTRY', 'STOCKED', 'REJECTED'].map((s) => (
+        {['DRAFT', 'SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'APPROVED', 'BIDDING', 'PURCHASED', 'STOCK_ENTRY', 'STOCKED', 'REJECTED'].map((s) => (
           <button key={s} className={filter === s ? 'chip active' : 'chip'} onClick={() => setFilter(s)}>
             {s} ({counts[s] || 0})
           </button>
@@ -109,6 +129,21 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
                 </div>
               </div>
             </div>
+            {i.status === 'DRAFT' && onEditDraft ? (
+              <div className="row" style={{ marginTop: 10, alignItems: 'center', gap: 8 }}>
+                <button type="button" className="btn ghost" onClick={() => onEditDraft(i.id)}>
+                  Edit draft
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  disabled={deleteLoadingId === i.id}
+                  onClick={() => handleDeleteDraft(i.id)}
+                >
+                  {deleteLoadingId === i.id ? 'Deleting…' : 'Delete draft'}
+                </button>
+              </div>
+            ) : null}
             {i.status === 'PURCHASED' ? (
               <div className="row" style={{ marginTop: 10, alignItems: 'center' }}>
                 <div className="muted small">
@@ -130,7 +165,20 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
         {!visible.length && !error ? <div className="muted">No indents for this filter.</div> : null}
       </div>
       {detailId != null ? (
-        <IndentDetailModal actingRole={actingRole} indentId={detailId} onClose={() => setDetailId(null)} />
+        <IndentDetailModal
+          actingRole={actingRole}
+          indentId={detailId}
+          onClose={() => setDetailId(null)}
+          onEditDraft={
+            onEditDraft
+              ? (id) => {
+                  setDetailId(null);
+                  onEditDraft(id);
+                }
+              : undefined
+          }
+          onDeleteDraft={detailId != null ? () => handleDeleteDraft(detailId) : undefined}
+        />
       ) : null}
     </div>
   );

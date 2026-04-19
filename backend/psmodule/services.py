@@ -254,6 +254,29 @@ def submit_indent_from_draft(
     return get_indent_data(indent.id, request=request)
 
 
+def delete_indent_draft(
+    indent_id: int,
+    actor,
+    _request_user,
+    *,
+    request=None,
+) -> None:
+    if actor.role != ActingRole.EMPLOYEE:
+        raise PermissionDenied("Only employees can delete drafts.")
+
+    indent = Indent.objects.filter(pk=indent_id, indenter=actor.extrainfo).first()
+    if not indent:
+        raise ValidationError({"detail": "Indent not found."})
+    if indent.status != Indent.Status.DRAFT:
+        raise ValidationError({"detail": "Only draft indents can be deleted."})
+    if indent.stock_entries.exists():
+        raise ValidationError({"detail": "This draft cannot be deleted."})
+
+    with transaction.atomic():
+        clear_indent_documents(indent)
+        indent.delete()
+
+
 def apply_hod_action(
     indent_id: int,
     actor,

@@ -32,7 +32,7 @@ function DetailDl({ rows }) {
   );
 }
 
-export default function IndentDetailModal({ actingRole, indentId, onClose }) {
+export default function IndentDetailModal({ actingRole, indentId, onClose, onEditDraft, onDeleteDraft }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -82,9 +82,34 @@ export default function IndentDetailModal({ actingRole, indentId, onClose }) {
       <div className="indentDetailPanel" role="dialog" aria-modal="true" aria-labelledby="indent-detail-title" onClick={(e) => e.stopPropagation()}>
         <div className="indentDetailHead">
           <h3 id="indent-detail-title">Indent #{indentId}</h3>
-          <button type="button" className="btn ghost" onClick={onClose}>
-            Close
-          </button>
+          <div className="row" style={{ gap: 8 }}>
+            {!loading && !error && data?.status === 'DRAFT' && onEditDraft ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  onEditDraft(indentId);
+                  onClose();
+                }}
+              >
+                Edit draft
+              </button>
+            ) : null}
+            {!loading && !error && data?.status === 'DRAFT' && onDeleteDraft ? (
+              <button
+                type="button"
+                className="btn danger"
+                onClick={() => {
+                  void onDeleteDraft();
+                }}
+              >
+                Delete draft
+              </button>
+            ) : null}
+            <button type="button" className="btn ghost" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
 
         {loading ? <div className="muted">Loading…</div> : null}

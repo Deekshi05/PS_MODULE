@@ -14,7 +14,7 @@ from psmodule.models import (
     StockEntry,
     StoreItem,
 )
-from psmodule.services import confirm_delivery, create_stock_entry
+from psmodule.services import confirm_delivery, create_stock_entry, delete_indent_draft
 
 
 class WorkflowPs002StockEntryTests(TestCase):
@@ -275,3 +275,44 @@ class WorkflowPsDeliveryConfirmationTests(TestCase):
                 actor=actor,
                 request_user=self.employee_user,
             )
+
+
+class DeleteDraftIndentTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.dept = DepartmentInfo.objects.create(code="CSE", name="Computer Science")
+        self.employee_user = User.objects.create_user(username="emp_del", password="pass1234")
+        self.other_user = User.objects.create_user(username="other_del", password="pass1234")
+        self.employee_info = ExtraInfo.objects.create(
+            user=self.employee_user, department=self.dept, employee_id="emp_del"
+        )
+        self.other_info = ExtraInfo.objects.create(
+            user=self.other_user, department=self.dept, employee_id="other_del"
+        )
+        self.draft = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Draft to delete",
+            status=Indent.Status.DRAFT,
+        )
+
+    def _actor(self, role, extrainfo):
+        return SimpleNamespace(role=role, extrainfo=extrainfo)
+
+    def test_employee_deletes_own_draft(self):
+        actor = self._actor(ActingRole.EMPLOYEE, self.employee_info)
+        pk = self.draft.id
+        delete_indent_draft(pk, actor, self.employee_user)
+        self.assertFalse(Indent.objects.filter(pk=pk).exists())
+
+    def test_cannot_delete_submitted_indent(self):
+        self.draft.status = Indent.Status.SUBMITTED
+        self.draft.save(update_fields=["status", "updated_at"])
+        actor = self._actor(ActingRole.EMPLOYEE, self.employee_info)
+        with self.assertRaises(ValidationError):
+            delete_indent_draft(self.draft.id, actor, self.employee_user)
+
+    def test_other_employee_cannot_delete_draft(self):
+        actor = self._actor(ActingRole.EMPLOYEE, self.other_info)
+        with self.assertRaises(ValidationError):
+            delete_indent_draft(self.draft.id, actor, self.other_user)

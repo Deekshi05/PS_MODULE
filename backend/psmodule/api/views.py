@@ -23,6 +23,7 @@ from psmodule.services import (
     confirm_delivery,
     create_indent,
     create_stock_entry,
+    delete_indent_draft,
     submit_indent_from_draft,
     update_indent_draft,
 )
@@ -79,6 +80,11 @@ class IndentViewSet(viewsets.ViewSet):
             request=request,
         )
         return Response(data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, pk=None):
+        actor = self._actor()
+        delete_indent_draft(int(pk), actor, request.user, request=request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="submit")
     def submit_draft(self, request, pk=None):

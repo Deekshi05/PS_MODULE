@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import RoleSelector from './RoleSelector';
 import EmployeeDashboard from './EmployeeDashboard';
@@ -53,6 +53,9 @@ function Icon({ name }) {
 export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole, onLogout }) {
   const [tab, setTab] = useState('dashboard');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [draftIndentIdToLoad, setDraftIndentIdToLoad] = useState(null);
+
+  const clearDraftIndentToLoad = useCallback(() => setDraftIndentIdToLoad(null), []);
 
   const isEmployee = useMemo(() => actingRole === 'EMPLOYEE', [actingRole]);
   const isPSAdmin = useMemo(() => actingRole === 'PS_ADMIN', [actingRole]);
@@ -142,13 +145,25 @@ export default function IndentWorkflowPage({ actingRole, allowedRoles, onSetRole
               {tab === 'create' ? (
                 <IndentForm
                   actingRole={actingRole}
+                  draftIndentIdToLoad={draftIndentIdToLoad}
+                  onDraftEditLoaded={clearDraftIndentToLoad}
                   onCreated={() => {
                     setRefreshKey((k) => k + 1);
                     setTab('dashboard');
                   }}
+                  onDraftSaved={() => setRefreshKey((k) => k + 1)}
+                  onDraftDeleted={() => setRefreshKey((k) => k + 1)}
                 />
               ) : isEmployee ? (
-                <EmployeeDashboard actingRole={actingRole} refreshKey={refreshKey} />
+                <EmployeeDashboard
+                  actingRole={actingRole}
+                  refreshKey={refreshKey}
+                  onDraftDeleted={() => setRefreshKey((k) => k + 1)}
+                  onEditDraft={(id) => {
+                    setDraftIndentIdToLoad(id);
+                    setTab('create');
+                  }}
+                />
               ) : isPSAdmin ? (
                 <PSAdminDashboard actingRole={actingRole} refreshKey={refreshKey} />
               ) : (
