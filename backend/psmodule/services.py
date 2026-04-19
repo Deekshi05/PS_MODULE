@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import base64
 from typing import Any, Dict, Optional
 
+from django.core.files.base import ContentFile
 from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from psmodule.models import ActingRole, Indent
+from psmodule.models import ActingRole, Indent, IndentDocument
 from psmodule.api.serializers import StockEntrySerializer
 from psmodule.selectors import (
     check_stock_availability_for_indent_id,
+    clear_indent_documents,
     create_indent_audit_event,
+    create_indent_entity,
     create_indent_line_items,
     create_stock_entry_from_indent_items_ps_admin,
     create_stock_entry_with_line_map,
-    create_submitted_indent,
     get_department_depadmin,
     get_department_by_code,
     get_department_hod,
@@ -24,42 +27,50 @@ from psmodule.selectors import (
     get_indent_for_hod_action,
     get_indent_for_stock_check,
     get_indent_for_stock_entry,
+    replace_indent_line_items,
     save_indent,
     validate_store_item_ids,
 )
 
 
-def create_indent(validated_data: Dict[str, Any], actor, request_user) -> dict:
-    if actor.role != ActingRole.EMPLOYEE:
-        raise ValidationError("Only employees can submit indents.")
+def save_indent_attachments_from_payload(
+    indent: Indent,
+    documents: list | None,
+    *,
+    replace: bool = False,
+) -> None:
+    if documents is None:
+        return
+    if replace:
+        clear_indent_documents(indent)
+    for doc in documents:
+        if not isinstance(doc, dict):
+            continue
+        raw_b64 = doc.get("data") or doc.get("content_base64") or ""
+        if not raw_b64:
+            continue
+        try:
+            raw = base64.b64decode(raw_b64, validate=True)
+        except (ValueError, TypeError) as e:
+            raise ValidationError(
+                {"documents": "Invalid base64 document payload."}
+            ) from e
+        if len(raw) > 15 * 1024 * 1024:
+            raise ValidationError({"documents": "File too large (max 15MB)."})
+        name = (doc.get("filename") or "attachment").strip() or "attachment"
+        att = IndentDocument(indent=indent, original_filename=name[:255])
+        att.file.save(name[:255], ContentFile(raw), save=True)
 
-    item_lines = validated_data["items"]
-    item_ids = [int(i["item_id"]) for i in item_lines]
-    validate_store_item_ids(item_ids)
 
-    indenter = actor.extrainfo
-    department = indenter.department
-
-    indent = create_submitted_indent(
-        indenter=indenter,
-        department=department,
-        purpose=validated_data["purpose"],
-        justification=validated_data.get("justification", ""),
-        estimated_cost=validated_data.get("estimated_cost"),
-    )
-
-    create_indent_line_items(indent, item_lines)
-
+def _finalize_indent_submission(indent: Indent, actor, request_user) -> None:
     indent.stock_available = check_stock_availability_for_indent_id(indent.id)
-
-    hod = get_department_hod(department)
-    indent.current_approver = hod if hod else get_department_depadmin(department)
+    hod = get_department_hod(indent.department)
+    indent.current_approver = hod if hod else get_department_depadmin(indent.department)
     indent.status = Indent.Status.SUBMITTED
     save_indent(
         indent,
         ["stock_available", "current_approver", "status", "updated_at"],
     )
-
     create_indent_audit_event(
         indent=indent,
         user=request_user,
@@ -68,7 +79,179 @@ def create_indent(validated_data: Dict[str, Any], actor, request_user) -> dict:
         notes="",
     )
 
-    return get_indent_data(indent.id)
+
+def create_indent(
+    validated_data: Dict[str, Any],
+    actor,
+    request_user,
+    *,
+    request=None,
+) -> dict:
+    if actor.role != ActingRole.EMPLOYEE:
+        raise ValidationError("Only employees can submit indents.")
+
+    as_draft = validated_data.get("as_draft", False)
+    item_lines = validated_data.get("items") or []
+
+    indenter = actor.extrainfo
+    department = indenter.department
+
+    if as_draft:
+        indent = create_indent_entity(
+            indenter=indenter,
+            department=department,
+            purpose=validated_data.get("purpose") or "",
+            justification=validated_data.get("justification", ""),
+            estimated_cost=validated_data.get("estimated_cost"),
+            status=Indent.Status.DRAFT,
+            designation=validated_data.get("designation", ""),
+            date_of_request=validated_data.get("date_of_request"),
+            why_requirement_needed=validated_data.get("why_requirement_needed", ""),
+            urgency_level=validated_data.get(
+                "urgency_level", Indent.UrgencyLevel.MEDIUM
+            ),
+            expected_usage=validated_data.get("expected_usage", ""),
+            contacts=validated_data.get("contacts"),
+        )
+        if item_lines:
+            create_indent_line_items(indent, item_lines)
+        save_indent_attachments_from_payload(
+            indent, validated_data.get("documents"), replace=False
+        )
+        create_indent_audit_event(
+            indent=indent,
+            user=request_user,
+            acting_role=actor.role,
+            action="SAVE_DRAFT",
+            notes="",
+        )
+        return get_indent_data(indent.id, request=request)
+
+    item_ids_for_validation = [
+        int(line["item_id"])
+        for line in item_lines
+        if line.get("item_id") is not None
+    ]
+    if item_ids_for_validation:
+        validate_store_item_ids(item_ids_for_validation)
+
+    indent = create_indent_entity(
+        indenter=indenter,
+        department=department,
+        purpose=validated_data["purpose"],
+        justification=validated_data.get("justification", ""),
+        estimated_cost=validated_data.get("estimated_cost"),
+        status=Indent.Status.SUBMITTED,
+        designation=validated_data.get("designation", ""),
+        date_of_request=validated_data.get("date_of_request"),
+        why_requirement_needed=validated_data.get("why_requirement_needed", ""),
+        urgency_level=validated_data.get(
+            "urgency_level", Indent.UrgencyLevel.MEDIUM
+        ),
+        expected_usage=validated_data.get("expected_usage", ""),
+        contacts=validated_data.get("contacts"),
+    )
+
+    create_indent_line_items(indent, item_lines)
+    save_indent_attachments_from_payload(
+        indent, validated_data.get("documents"), replace=False
+    )
+
+    _finalize_indent_submission(indent, actor, request_user)
+
+    return get_indent_data(indent.id, request=request)
+
+
+def update_indent_draft(
+    indent_id: int,
+    validated_data: Dict[str, Any],
+    actor,
+    request_user,
+    *,
+    request=None,
+    documents_replace: list | None = None,
+) -> dict:
+    if actor.role != ActingRole.EMPLOYEE:
+        raise PermissionDenied("Only employees can update drafts.")
+
+    indent = Indent.objects.filter(pk=indent_id, indenter=actor.extrainfo).first()
+    if not indent:
+        raise ValidationError({"detail": "Indent not found."})
+    if indent.status != Indent.Status.DRAFT:
+        raise ValidationError({"detail": "Only draft indents can be updated this way."})
+
+    update_fields: list[str] = []
+    field_map = {
+        "purpose": "purpose",
+        "justification": "justification",
+        "estimated_cost": "estimated_cost",
+        "designation": "designation",
+        "date_of_request": "date_of_request",
+        "why_requirement_needed": "why_requirement_needed",
+        "urgency_level": "urgency_level",
+        "expected_usage": "expected_usage",
+        "contacts": "contacts",
+    }
+    for key, attr in field_map.items():
+        if key in validated_data and validated_data[key] is not None:
+            setattr(indent, attr, validated_data[key])
+            update_fields.append(attr)
+
+    if update_fields:
+        update_fields.append("updated_at")
+        save_indent(indent, update_fields)
+
+    if "items" in validated_data and validated_data["items"] is not None:
+        replace_indent_line_items(indent, validated_data["items"])
+
+    if documents_replace is not None:
+        save_indent_attachments_from_payload(
+            indent, documents_replace, replace=True
+        )
+
+    create_indent_audit_event(
+        indent=indent,
+        user=request_user,
+        acting_role=actor.role,
+        action="UPDATE_DRAFT",
+        notes="",
+    )
+    return get_indent_data(indent.id, request=request)
+
+
+def submit_indent_from_draft(
+    indent_id: int,
+    actor,
+    request_user,
+    *,
+    request=None,
+) -> dict:
+    if actor.role != ActingRole.EMPLOYEE:
+        raise PermissionDenied("Only employees can submit indents.")
+
+    indent = Indent.objects.filter(pk=indent_id, indenter=actor.extrainfo).first()
+    if not indent:
+        raise ValidationError({"detail": "Indent not found."})
+    if indent.status != Indent.Status.DRAFT:
+        raise ValidationError({"detail": "Only draft indents can be submitted."})
+
+    lines = list(indent.items.all())
+    if not lines:
+        raise ValidationError({"items": "At least one item is required to submit."})
+
+    item_ids_for_validation = [line.item_id for line in lines if line.item_id]
+    if item_ids_for_validation:
+        validate_store_item_ids(item_ids_for_validation)
+    if any(line.item_id is None for line in lines):
+        raise ValidationError(
+            {
+                "items": "All lines must resolve to a catalog item before submit "
+                "(use item_id or item_name for each line)."
+            }
+        )
+
+    _finalize_indent_submission(indent, actor, request_user)
+    return get_indent_data(indent.id, request=request)
 
 
 def apply_hod_action(
@@ -190,7 +373,9 @@ def create_stock_entry(
     indent = get_indent_for_stock_entry(indent_id, actor)
 
     requested_map = {
-        int(line.item_id): int(line.quantity) for line in indent.items.all()
+        int(line.item_id): int(line.quantity)
+        for line in indent.items.all()
+        if line.item_id is not None
     }
     payload_map = {int(line["item_id"]): int(line["quantity"]) for line in item_lines}
 

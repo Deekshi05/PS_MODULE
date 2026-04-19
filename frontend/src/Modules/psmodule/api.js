@@ -81,6 +81,42 @@ export async function readIndents({ actingRole }) {
   }
 }
 
+/** Full indent payload (basic info, items, contacts, documents, totals). */
+export async function readIndent({ actingRole, indentId }) {
+  try {
+    const res = await client.get(`/ps/api/indents/${indentId}/`, {
+      headers: authHeaders(actingRole),
+    });
+    return res.data;
+  } catch (err) {
+    throwAxiosError(err);
+  }
+}
+
+/** Save a draft indent (PATCH). Pass only fields to change. */
+export async function writeUpdateIndentDraft({ actingRole, indentId, payload }) {
+  try {
+    const res = await client.patch(`/ps/api/indents/${indentId}/`, payload, {
+      headers: authHeaders(actingRole),
+    });
+    return res.data;
+  } catch (err) {
+    throwAxiosError(err);
+  }
+}
+
+/** Submit a previously saved draft (POST). */
+export async function writeSubmitIndentDraft({ actingRole, indentId }) {
+  try {
+    const res = await client.post(`/ps/api/indents/${indentId}/submit/`, {}, {
+      headers: authHeaders(actingRole),
+    });
+    return res.data;
+  } catch (err) {
+    throwAxiosError(err);
+  }
+}
+
 export async function readDecisions({ actingRole }) {
   try {
     const res = await client.get('/ps/api/indents/decisions/', { headers: authHeaders(actingRole) });

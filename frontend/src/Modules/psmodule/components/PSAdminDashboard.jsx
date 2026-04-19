@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { readPSAdminCategories } from '../api';
+import IndentDetailModal from './IndentDetailModal';
 import PSAdminActionBar from './PSAdminActionBar';
 
 export default function PSAdminDashboard({ actingRole, refreshKey }) {
@@ -9,6 +10,7 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
   const [tick, setTick] = useState(0);
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('ALL');
+  const [detailId, setDetailId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,27 +139,41 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
             {visible.length ? (
               visible.map((i) => (
                 <div className="listItem" key={`${i._category || 'unknown'}-${i.id}`}>
-                  <div className="row">
-                    <div>
-                      <div className="title">Indent #{i.id}</div>
-                      <div className="muted small">{i.purpose}</div>
-                      <div className="muted small">Department: {i.department}</div>
-                      {activeCategory === 'ALL' ? (
-                        <div className="muted small">Category: {(i._category || '').toUpperCase()}</div>
-                      ) : null}
-                    </div>
-                    <div className="right">
-                      <div className="badge" style={getBadgeStyle(i.status)}>{i.status}</div>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: 8 }}>
-                    <div className="muted small">Items: {i.items?.length || 0}</div>
-                    {i.items?.map((item) => (
-                      <div key={item.id} className="muted small">
-                        - {item.item.name}: {item.quantity} {item.item.unit}
+                  <div
+                    className="indentListClickable"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View details for indent ${i.id}`}
+                    onClick={() => setDetailId(i.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setDetailId(i.id);
+                      }
+                    }}
+                  >
+                    <div className="row">
+                      <div>
+                        <div className="title">Indent #{i.id}</div>
+                        <div className="muted small">{i.purpose}</div>
+                        <div className="muted small">Department: {i.department}</div>
+                        {activeCategory === 'ALL' ? (
+                          <div className="muted small">Category: {(i._category || '').toUpperCase()}</div>
+                        ) : null}
                       </div>
-                    ))}
+                      <div className="right">
+                        <div className="badge" style={getBadgeStyle(i.status)}>{i.status}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8 }}>
+                      <div className="muted small">Items: {i.items?.length || 0}</div>
+                      {i.items?.map((item) => (
+                        <div key={item.id} className="muted small">
+                          - {item.item?.name ?? item.item_name ?? 'Item'}: {item.quantity} {item.item?.unit ?? ''}
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   {i.status === 'PURCHASED' ? (
@@ -187,6 +203,9 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
           </div>
         </div>
       )}
+      {detailId != null ? (
+        <IndentDetailModal actingRole={actingRole} indentId={detailId} onClose={() => setDetailId(null)} />
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { readIndents, writeConfirmDelivery } from '../api';
+import IndentDetailModal from './IndentDetailModal';
 
 export default function EmployeeDashboard({ actingRole, refreshKey }) {
   const [indents, setIndents] = useState([]);
@@ -7,6 +8,7 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
   const [filter, setFilter] = useState('ALL');
   const [actionError, setActionError] = useState('');
   const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [detailId, setDetailId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +74,19 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
       <div className="list">
         {visible.map((i) => (
           <div className="listItem" key={i.id}>
-            <div className="row">
+            <div
+              className="row indentListClickable"
+              role="button"
+              tabIndex={0}
+              aria-label={`View details for indent ${i.id}`}
+              onClick={() => setDetailId(i.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setDetailId(i.id);
+                }
+              }}
+            >
               <div>
                 <div className="title">Indent #{i.id}</div>
                 <div className="muted small">{i.purpose}</div>
@@ -115,6 +129,9 @@ export default function EmployeeDashboard({ actingRole, refreshKey }) {
         ))}
         {!visible.length && !error ? <div className="muted">No indents for this filter.</div> : null}
       </div>
+      {detailId != null ? (
+        <IndentDetailModal actingRole={actingRole} indentId={detailId} onClose={() => setDetailId(null)} />
+      ) : null}
     </div>
   );
 }

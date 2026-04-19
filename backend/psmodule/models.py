@@ -1,5 +1,9 @@
+import secrets
+import string
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from psmodule.accounts.models import DepartmentInfo, ExtraInfo
 
@@ -60,6 +64,12 @@ class Indent(models.Model):
         INTERNAL = "INTERNAL", "Internal Stock"
         EXTERNAL = "EXTERNAL", "External Procurement"
 
+    class UrgencyLevel(models.TextChoices):
+        LOW = "LOW", "Low"
+        MEDIUM = "MEDIUM", "Medium"
+        HIGH = "HIGH", "High"
+        CRITICAL = "CRITICAL", "Critical"
+
     indenter = models.ForeignKey(
         ExtraInfo, on_delete=models.PROTECT, related_name="indents"
     )
@@ -91,32 +101,87 @@ class Indent(models.Model):
         related_name="pending_indents",
     )
 
+    public_reference_id = models.CharField(
+        max_length=40,
+        unique=True,
+        editable=False,
+    )
+    date_of_request = models.DateField(default=timezone.localdate)
+    designation = models.CharField(max_length=200, blank=True, default="")
+    contacts = models.JSONField(default=list, blank=True)
+    why_requirement_needed = models.TextField(blank=True, default="")
+    urgency_level = models.CharField(
+        max_length=20,
+        choices=UrgencyLevel.choices,
+        default=UrgencyLevel.MEDIUM,
+    )
+    expected_usage = models.TextField(blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
         return f"Indent #{self.id} by {self.indenter}"
 
+    def _generate_public_reference_id(self) -> str:
+        digits = string.digits
+        d = timezone.localdate().strftime("%Y%m%d")
+        for _ in range(20):
+            suffix = "".join(secrets.choice(digits) for _ in range(6))
+            candidate = f"IND-{d}-{suffix}"
+            if not Indent.objects.filter(public_reference_id=candidate).exists():
+                return candidate
+        return f"IND-{d}-{secrets.token_hex(4).upper()}"
+
+    def save(self, *args, **kwargs):
+        if not self.public_reference_id:
+            self.public_reference_id = self._generate_public_reference_id()
+        super().save(*args, **kwargs)
+
 
 class IndentItem(models.Model):
     indent = models.ForeignKey(Indent, on_delete=models.CASCADE, related_name="items")
     item = models.ForeignKey(
-        StoreItem, on_delete=models.PROTECT, related_name="indent_lines"
+        StoreItem,
+        on_delete=models.PROTECT,
+        related_name="indent_lines",
+        null=True,
+        blank=True,
     )
     quantity = models.PositiveIntegerField()
     estimated_cost = models.DecimalField(
         max_digits=12, decimal_places=2, null=True, blank=True
     )
+    line_name = models.CharField(max_length=255, blank=True, default="")
+    line_description = models.TextField(blank=True, default="")
+    category = models.CharField(max_length=120, blank=True, default="")
+    unit_price = models.DecimalField(
+        max_digits=14, decimal_places=4, null=True, blank=True
+    )
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["indent", "item"], name="uniq_item_per_indent"
+                fields=["indent", "item"],
+                condition=models.Q(item__isnull=False),
+                name="uniq_item_per_indent_when_item_set",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.indent_id}: {self.item} x {self.quantity}"
+        return f"{self.indent_id}: {self.item_id} x {self.quantity}"
+
+
+class IndentDocument(models.Model):
+    indent = models.ForeignKey(
+        Indent, on_delete=models.CASCADE, related_name="documents"
+    )
+    file = models.FileField(upload_to="indent_attachments/%Y/%m/")
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"IndentDoc {self.id} for {self.indent_id}"
 
 
 class IndentAudit(models.Model):

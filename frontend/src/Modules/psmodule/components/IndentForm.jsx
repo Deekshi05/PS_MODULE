@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { writeCreateIndent } from '../api';
 import './IndentForm.css';
 
 const DEPARTMENTS = [
@@ -12,6 +13,12 @@ const DEPARTMENTS = [
 ];
 
 const URGENCY_LEVELS = ['Low', 'Medium', 'High'];
+
+const URGENCY_TO_API = {
+  Low: 'LOW',
+  Medium: 'MEDIUM',
+  High: 'HIGH',
+};
 const STATUS_OPTIONS = ['Draft', 'Submitted', 'Approved', 'Rejected'];
 const CATEGORY_OPTIONS = ['IT', 'Lab', 'Furniture', 'Office Supplies', 'Maintenance', 'Other'];
 
@@ -50,6 +57,24 @@ function makeInitialContacts() {
   return [{ label: 'Primary Contact', value: '' }];
 }
 
+function readFileAsBase64Doc(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Could not read file'));
+        return;
+      }
+      const comma = result.indexOf(',');
+      const data = comma >= 0 ? result.slice(comma + 1) : result;
+      resolve({ filename: file.name, data });
+    };
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function IndentForm({ actingRole, onCreated }) {
   const [indentId, setIndentId] = useState(makeAutoIndentId());
   const [requestDate, setRequestDate] = useState(new Date().toISOString().slice(0, 10));
@@ -71,6 +96,7 @@ export default function IndentForm({ actingRole, onCreated }) {
 
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const requestedByRole = ROLE_LABELS[actingRole] || actingRole || 'Employee';
 
@@ -191,7 +217,7 @@ export default function IndentForm({ actingRole, onCreated }) {
     setOk('Draft saved on frontend. Backend integration can be connected later.');
   }
 
-  function submitIndent(e) {
+  async function submitIndent(e) {
     e.preventDefault();
     setError('');
     setOk('');
@@ -202,11 +228,52 @@ export default function IndentForm({ actingRole, onCreated }) {
       return;
     }
 
-    setStatus('Submitted');
-    setCurrentHolder(NEXT_HOLDER[actingRole] || 'Department Head');
-    setOk('Indent submitted from frontend form. Backend workflow hookup can be added next.');
+    const validItems = items.filter((item) => item.itemName.trim());
+    const purposeText = purposeOfRequirement.trim();
+    const documents =
+      uploadedDocs.length > 0 ? await Promise.all(uploadedDocs.map((f) => readFileAsBase64Doc(f))) : [];
 
-    onCreated?.();
+    const payload = {
+      purpose: purposeText.slice(0, 255),
+      why_requirement_needed: purposeText,
+      designation: designation.trim(),
+      date_of_request: requestDate || null,
+      urgency_level: URGENCY_TO_API[urgencyLevel] || 'MEDIUM',
+      expected_usage: expectedUsage.trim(),
+      estimated_cost: grandTotal > 0 ? Number(grandTotal.toFixed(2)) : null,
+      as_draft: false,
+      items: validItems.map((item) => ({
+        item_name: item.itemName.trim(),
+        item_description: (item.itemDescription || '').trim(),
+        quantity: Number(item.quantity),
+        unit_price:
+          item.estimatedPrice !== '' && item.estimatedPrice != null
+            ? Number(item.estimatedPrice)
+            : null,
+        category: item.category || '',
+      })),
+      contacts: contactDetails
+        .filter((c) => c.value.trim())
+        .map((c) => ({
+          label: c.label || 'Contact',
+          primary_contact: c.value.trim(),
+          phone_or_email: c.value.trim(),
+        })),
+      documents,
+    };
+
+    setSubmitting(true);
+    try {
+      await writeCreateIndent({ actingRole, payload });
+      setStatus('Submitted');
+      setCurrentHolder(NEXT_HOLDER[actingRole] || 'Department Head');
+      setOk('Indent submitted successfully.');
+      onCreated?.();
+    } catch (err) {
+      setError(err?.message || 'Submit failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -405,8 +472,8 @@ export default function IndentForm({ actingRole, onCreated }) {
           <button type="button" className="btn ghost" onClick={saveDraft}>
             Save Draft
           </button>
-          <button type="submit" className="btn">
-            Submit (Send)
+          <button type="submit" className="btn" disabled={submitting}>
+            {submitting ? 'Submitting…' : 'Submit (Send)'}
           </button>
           <button type="button" className="btn danger" onClick={resetForm}>
             Reset

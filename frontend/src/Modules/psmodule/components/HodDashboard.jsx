@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { readDecisions, readIndents, readProcurementReady } from '../api';
 import HodActionBar from './HodActionBar';
+import IndentDetailModal from './IndentDetailModal';
 
 export default function HodDashboard({ actingRole, refreshKey }) {
   const [indents, setIndents] = useState([]);
@@ -9,6 +10,7 @@ export default function HodDashboard({ actingRole, refreshKey }) {
   const [tab, setTab] = useState('PENDING');
   const [query, setQuery] = useState('');
   const [tick, setTick] = useState(0);
+  const [detailId, setDetailId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +83,19 @@ export default function HodDashboard({ actingRole, refreshKey }) {
       <div className="list">
         {filtered.map((i) => (
           <div className="listItem" key={i.id}>
-            <div className="row">
+            <div
+              className="row indentListClickable"
+              role="button"
+              tabIndex={0}
+              aria-label={`View details for indent ${i.id}`}
+              onClick={() => setDetailId(i.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setDetailId(i.id);
+                }
+              }}
+            >
               <div>
                 <div className="title">Indent #{i.id}</div>
                 <div className="muted small">{i.purpose}</div>
@@ -109,6 +123,9 @@ export default function HodDashboard({ actingRole, refreshKey }) {
           </div>
         ) : null}
       </div>
+      {detailId != null ? (
+        <IndentDetailModal actingRole={actingRole} indentId={detailId} onClose={() => setDetailId(null)} />
+      ) : null}
     </div>
   );
 }

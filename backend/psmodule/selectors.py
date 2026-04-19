@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Dict, List, Optional, Sequence
 
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from django.shortcuts import get_object_or_404
+from rest_framework.exceptions import NotAuthenticated, PermissionDenied, ValidationError
 
 from psmodule.accounts.models import DepartmentInfo, ExtraInfo, HoldsDesignation
 from psmodule.models import (
@@ -20,6 +22,8 @@ from psmodule.api.serializers import IndentSerializer
 
 
 def get_extrainfo_for_user(user) -> ExtraInfo:
+    if not getattr(user, "is_authenticated", False):
+        raise NotAuthenticated()
     try:
         return ExtraInfo.objects.select_related("department").get(user=user)
     except ExtraInfo.DoesNotExist as e:  # type: ignore[attr-defined]
@@ -129,12 +133,14 @@ def check_stock_availability_for_indent_id(indent_id: int) -> bool:
     Returns True only if, for every indent line, available stock >= requested quantity.
     """
     lines = list(
-        IndentItem.objects.filter(indent_id=indent_id).values("item_id", "quantity")
+        IndentItem.objects.filter(indent_id=indent_id, item_id__isnull=False).values(
+            "item_id", "quantity"
+        )
     )
     if not lines:
         return False
 
-    item_ids = [l["item_id"] for l in lines]
+    item_ids = [l["item_id"] for l in lines if l["item_id"] is not None]
     stock_map: Dict[int, int] = dict(
         CurrentStock.objects.filter(item_id__in=item_ids).values_list(
             "item_id", "quantity"
@@ -148,13 +154,57 @@ def check_stock_availability_for_indent_id(indent_id: int) -> bool:
     return True
 
 
-def get_indent_data(indent_id: int) -> dict:
+def get_indent_data(indent_id: int, *, request=None) -> dict:
     indent = (
-        Indent.objects.select_related("indenter", "department", "current_approver")
-        .prefetch_related("items__item")
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        )
+        .prefetch_related("items__item", "documents")
         .get(id=indent_id)
     )
-    return IndentSerializer(indent).data
+    return IndentSerializer(indent, context={"request": request}).data
+
+
+def indent_visible_to_actor(indent: Indent, actor) -> bool:
+    if actor.role == ActingRole.EMPLOYEE:
+        return indent.indenter_id == actor.extrainfo.id
+    if actor.role == ActingRole.PS_ADMIN:
+        return indent.status in (
+            Indent.Status.EXTERNAL_PROCUREMENT,
+            Indent.Status.APPROVED,
+            Indent.Status.BIDDING,
+            Indent.Status.PURCHASED,
+            Indent.Status.STOCK_ENTRY,
+            Indent.Status.STOCKED,
+        )
+    if actor.role in (
+        ActingRole.DEPADMIN,
+        ActingRole.HOD,
+        ActingRole.REGISTRAR,
+        ActingRole.DIRECTOR,
+    ):
+        return indent.current_approver_id == actor.extrainfo.id
+    return False
+
+
+def get_indent_detail_data(indent_id: int, actor, *, request=None) -> dict:
+    indent = get_object_or_404(
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        ).prefetch_related("items__item", "documents"),
+        pk=indent_id,
+    )
+    if not indent_visible_to_actor(indent, actor):
+        raise PermissionDenied("Cannot view this indent.")
+    return get_indent_data(indent_id, request=request)
 
 
 def get_indent_for_hod_action(indent_id: int, actor) -> Indent:
@@ -211,11 +261,11 @@ def get_stock_breakdown_data(indent_id: int, actor) -> dict:
         raise PermissionDenied("Cannot view other department's indent.")
 
     lines = list(
-        IndentItem.objects.filter(indent_id=indent_id)
+        IndentItem.objects.filter(indent_id=indent_id, item_id__isnull=False)
         .select_related("item")
         .values("item_id", "quantity", "item__name")
     )
-    item_ids = [l["item_id"] for l in lines]
+    item_ids = [l["item_id"] for l in lines if l["item_id"] is not None]
     stock_map: Dict[int, int] = dict(
         CurrentStock.objects.filter(item_id__in=item_ids).values_list(
             "item_id", "quantity"
@@ -244,10 +294,14 @@ def get_stock_breakdown_data(indent_id: int, actor) -> dict:
     }
 
 
-def get_indents_for_actor_data(actor) -> List[dict]:
+def get_indents_for_actor_data(actor, *, request=None) -> List[dict]:
     qs = Indent.objects.select_related(
-        "indenter", "department", "current_approver"
-    ).prefetch_related("items__item")
+        "indenter",
+        "indenter__user",
+        "department",
+        "current_approver",
+        "current_approver__user",
+    ).prefetch_related("items__item", "documents")
     if actor.role == ActingRole.EMPLOYEE:
         qs = qs.filter(indenter=actor.extrainfo)
     elif actor.role == ActingRole.PS_ADMIN:
@@ -272,10 +326,10 @@ def get_indents_for_actor_data(actor) -> List[dict]:
         raise PermissionDenied("Unauthorized")
 
     qs = qs.order_by("-updated_at")
-    return IndentSerializer(qs, many=True).data
+    return IndentSerializer(qs, many=True, context={"request": request}).data
 
 
-def get_indent_decisions_for_actor_data(actor, user) -> List[dict]:
+def get_indent_decisions_for_actor_data(actor, user, *, request=None) -> List[dict]:
     if actor.role == ActingRole.EMPLOYEE:
         raise PermissionDenied("Only approver roles can view decisions.")
 
@@ -290,12 +344,18 @@ def get_indent_decisions_for_actor_data(actor, user) -> List[dict]:
         .distinct()
     )
     qs = (
-        Indent.objects.select_related("indenter", "department", "current_approver")
-        .prefetch_related("items__item")
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        )
+        .prefetch_related("items__item", "documents")
         .filter(id__in=indent_ids)
         .order_by("-updated_at")
     )
-    return IndentSerializer(qs, many=True).data
+    return IndentSerializer(qs, many=True, context={"request": request}).data
 
 
 def get_me_payload(user) -> dict:
@@ -347,22 +407,30 @@ def get_store_item_stock_check_status(item_id: int, required: int) -> dict:
     }
 
 
-def get_procurement_ready_indents_for_actor_data(actor) -> List[dict]:
+def get_procurement_ready_indents_for_actor_data(actor, *, request=None) -> List[dict]:
     if actor.role not in (ActingRole.DEPADMIN, ActingRole.PS_ADMIN):
         raise PermissionDenied(
             "Only DepAdmin/PS Admin can view procurement-ready indents."
         )
 
     qs = (
-        Indent.objects.select_related("indenter", "department", "current_approver")
-        .prefetch_related("items__item")
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        )
+        .prefetch_related("items__item", "documents")
         .filter(status__in=[Indent.Status.EXTERNAL_PROCUREMENT, Indent.Status.APPROVED])
     )
 
     if actor.role == ActingRole.DEPADMIN:
         qs = qs.filter(department=actor.extrainfo.department)
 
-    return IndentSerializer(qs.order_by("-updated_at"), many=True).data
+    return IndentSerializer(
+        qs.order_by("-updated_at"), many=True, context={"request": request}
+    ).data
 
 
 def get_indent_for_stock_entry(indent_id: int, actor) -> Indent:
@@ -397,80 +465,160 @@ def get_indent_for_stock_entry(indent_id: int, actor) -> Indent:
     return indent
 
 
-def get_ps_admin_indents_by_category(actor) -> dict:
+def get_ps_admin_indents_by_category(actor, *, request=None) -> dict:
     """Get indents categorized by procurement stage for PS_ADMIN dashboard"""
     if actor.role != ActingRole.PS_ADMIN:
         raise PermissionDenied("Only PS_ADMIN can access this view.")
 
     # Pending: APPROVED indents ready for bidding
     pending_qs = (
-        Indent.objects.select_related("indenter", "department", "current_approver")
-        .prefetch_related("items__item")
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        )
+        .prefetch_related("items__item", "documents")
         .filter(status=Indent.Status.APPROVED)
         .order_by("-updated_at")
     )
 
     # Bidding: Indents in BIDDING status
     bidding_qs = (
-        Indent.objects.select_related("indenter", "department", "current_approver")
-        .prefetch_related("items__item")
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        )
+        .prefetch_related("items__item", "documents")
         .filter(status=Indent.Status.BIDDING)
         .order_by("-updated_at")
     )
 
     # Purchased: Indents in PURCHASED status (awaiting/confirmed delivery)
     purchased_qs = (
-        Indent.objects.select_related("indenter", "department", "current_approver")
-        .prefetch_related("items__item")
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        )
+        .prefetch_related("items__item", "documents")
         .filter(status=Indent.Status.PURCHASED)
         .order_by("-updated_at")
     )
 
     # Stock entry: Indents moved to stock entry stage
     stock_entry_qs = (
-        Indent.objects.select_related("indenter", "department", "current_approver")
-        .prefetch_related("items__item")
+        Indent.objects.select_related(
+            "indenter",
+            "indenter__user",
+            "department",
+            "current_approver",
+            "current_approver__user",
+        )
+        .prefetch_related("items__item", "documents")
         .filter(status__in=[Indent.Status.STOCK_ENTRY, Indent.Status.STOCKED])
         .order_by("-updated_at")
     )
 
+    ctx = {"request": request}
     return {
-        "pending": IndentSerializer(pending_qs, many=True).data,
-        "bidding": IndentSerializer(bidding_qs, many=True).data,
-        "purchased": IndentSerializer(purchased_qs, many=True).data,
-        "stock_entry": IndentSerializer(stock_entry_qs, many=True).data,
+        "pending": IndentSerializer(pending_qs, many=True, context=ctx).data,
+        "bidding": IndentSerializer(bidding_qs, many=True, context=ctx).data,
+        "purchased": IndentSerializer(purchased_qs, many=True, context=ctx).data,
+        "stock_entry": IndentSerializer(stock_entry_qs, many=True, context=ctx).data,
     }
 
 
 # --- Writes / ORM mutations (called from services) ---
 
 
-def create_submitted_indent(
+def resolve_store_item_id_for_line(line: dict) -> int:
+    if line.get("item_id") is not None:
+        return int(line["item_id"])
+    name = (line.get("item_name") or "").strip()
+    if not name:
+        raise ValidationError(
+            {"items": "Each item line requires item_id or item_name."}
+        )
+    existing = StoreItem.objects.filter(name__iexact=name).first()
+    if existing:
+        return existing.id
+    return StoreItem.objects.create(name=name[:255], unit="nos").id
+
+
+def create_indent_entity(
     *,
     indenter,
     department,
     purpose: str,
     justification: str,
     estimated_cost,
+    status: str,
+    designation: str = "",
+    date_of_request=None,
+    why_requirement_needed: str = "",
+    urgency_level: str = Indent.UrgencyLevel.MEDIUM,
+    expected_usage: str = "",
+    contacts=None,
 ) -> Indent:
-    return Indent.objects.create(
-        indenter=indenter,
-        department=department,
-        purpose=purpose,
-        justification=justification,
-        estimated_cost=estimated_cost,
-        status=Indent.Status.SUBMITTED,
-    )
+    kwargs: dict = {
+        "indenter": indenter,
+        "department": department,
+        "purpose": purpose or "",
+        "justification": justification or "",
+        "estimated_cost": estimated_cost,
+        "status": status,
+        "designation": designation or "",
+        "why_requirement_needed": why_requirement_needed or "",
+        "urgency_level": urgency_level or Indent.UrgencyLevel.MEDIUM,
+        "expected_usage": expected_usage or "",
+        "contacts": contacts if contacts is not None else [],
+    }
+    if date_of_request is not None:
+        kwargs["date_of_request"] = date_of_request
+    return Indent.objects.create(**kwargs)
 
 
 def create_indent_line_items(indent: Indent, item_lines: list) -> None:
     for line in item_lines:
+        item_id = resolve_store_item_id_for_line(line)
+        qty = int(line["quantity"])
+        unit_price = line.get("unit_price")
+        est = line.get("estimated_cost")
+        if est is None and unit_price is not None:
+            est = (Decimal(str(unit_price)) * qty).quantize(Decimal("0.01"))
+        item_obj = StoreItem.objects.get(pk=item_id)
+        display_name = (line.get("item_name") or "").strip() or item_obj.name
+        desc = line.get("item_description") or line.get("description") or ""
+        cat = line.get("category") or ""
         IndentItem.objects.create(
             indent=indent,
-            item_id=int(line["item_id"]),
-            quantity=int(line["quantity"]),
-            estimated_cost=line.get("estimated_cost"),
+            item_id=item_id,
+            quantity=qty,
+            estimated_cost=est,
+            line_name=display_name[:255],
+            line_description=str(desc) if desc else "",
+            category=str(cat)[:120] if cat else "",
+            unit_price=unit_price,
         )
+
+
+def replace_indent_line_items(indent: Indent, item_lines: list) -> None:
+    IndentItem.objects.filter(indent=indent).delete()
+    if item_lines:
+        create_indent_line_items(indent, item_lines)
+
+
+def clear_indent_documents(indent: Indent) -> None:
+    for doc in indent.documents.all():
+        doc.file.delete(save=False)
+        doc.delete()
 
 
 def create_indent_audit_event(
@@ -542,6 +690,12 @@ def create_stock_entry_from_indent_items_ps_admin(
         notes=notes or "",
     )
     for item_line in indent.items.all():
+        if not item_line.item_id:
+            raise ValidationError(
+                {
+                    "detail": "All indent lines must reference a catalog item before stock entry."
+                }
+            )
         StockEntryItem.objects.create(
             stock_entry=entry,
             item_id=item_line.item_id,

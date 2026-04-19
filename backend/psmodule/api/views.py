@@ -8,6 +8,7 @@ from psmodule.models import ActingRole
 from psmodule.rbac import get_actor_context
 from psmodule.selectors import (
     get_indent_decisions_for_actor_data,
+    get_indent_detail_data,
     get_indents_for_actor_data,
     get_me_payload,
     get_procurement_ready_indents_for_actor_data,
@@ -22,10 +23,13 @@ from psmodule.services import (
     confirm_delivery,
     create_indent,
     create_stock_entry,
+    submit_indent_from_draft,
+    update_indent_draft,
 )
 from psmodule.api.serializers import (
     HODActionSerializer,
     IndentCreateSerializer,
+    IndentPartialUpdateSerializer,
     PSAdminActionSerializer,
     StockEntryCreateSerializer,
     validate_stock_check_query_params,
@@ -41,26 +45,66 @@ class IndentViewSet(viewsets.ViewSet):
 
     def list(self, request):
         actor = self._actor()
-        return Response(get_indents_for_actor_data(actor))
+        return Response(get_indents_for_actor_data(actor, request=request))
+
+    def retrieve(self, request, pk=None):
+        actor = self._actor()
+        return Response(
+            get_indent_detail_data(int(pk), actor, request=request)
+        )
+
+    def partial_update(self, request, pk=None):
+        actor = self._actor()
+        serializer = IndentPartialUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        docs = request.data.get("documents") if "documents" in request.data else None
+        data = update_indent_draft(
+            int(pk),
+            serializer.validated_data,
+            actor,
+            request.user,
+            request=request,
+            documents_replace=docs,
+        )
+        return Response(data)
 
     def create(self, request):
         actor = self._actor()
         serializer = IndentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = create_indent(serializer.validated_data, actor, request.user)
+        data = create_indent(
+            serializer.validated_data,
+            actor,
+            request.user,
+            request=request,
+        )
         return Response(data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="submit")
+    def submit_draft(self, request, pk=None):
+        actor = self._actor()
+        data = submit_indent_from_draft(
+            int(pk), actor, request.user, request=request
+        )
+        return Response(data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path="decisions")
     def decisions(self, request):
         actor = self._actor()
         if actor.role == ActingRole.EMPLOYEE:
             raise PermissionDenied("Only approver roles can view decisions.")
-        return Response(get_indent_decisions_for_actor_data(actor, request.user))
+        return Response(
+            get_indent_decisions_for_actor_data(
+                actor, request.user, request=request
+            )
+        )
 
     @action(detail=False, methods=["get"], url_path="procurement-ready")
     def procurement_ready(self, request):
         actor = self._actor()
-        return Response(get_procurement_ready_indents_for_actor_data(actor))
+        return Response(
+            get_procurement_ready_indents_for_actor_data(actor, request=request)
+        )
 
     @action(detail=True, methods=["post"], url_path="hod-action")
     def hod_action(self, request, pk=None):
@@ -113,7 +157,7 @@ class IndentViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["get"], url_path="ps-admin-categories")
     def ps_admin_categories(self, request):
         actor = self._actor()
-        return Response(get_ps_admin_indents_by_category(actor))
+        return Response(get_ps_admin_indents_by_category(actor, request=request))
 
     @action(detail=True, methods=["post"], url_path="ps-admin-action")
     def ps_admin_action(self, request, pk=None):
