@@ -14,8 +14,9 @@ function statusLabel(indent) {
   if (!indent) return 'Unknown';
   if (indent.status === 'DRAFT') return 'Draft';
   if (indent.status === 'PURCHASED') return indent.delivery_confirmed ? 'Delivered' : 'Awaiting Delivery';
+  if (indent.status === 'INTERNAL_ISSUED') return 'Stock Issued';
   if (indent.status === 'REJECTED') return 'Rejected';
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'Completed';
+  if (['STOCK_CHECKED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'Completed';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(indent.status)) return 'In Procurement';
   if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(indent.status)) return 'In Approval';
   return indent.status;
@@ -46,7 +47,7 @@ function getCurrentStageIndex(indent) {
   if (indent.status === 'DRAFT') return 0;
   if (indent.status === 'REJECTED') return 1;
   if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status) || indent.procurement_type === 'INTERNAL') {
-    if (indent.status === 'STOCKED' || indent.delivery_confirmed) return 3;
+    if (indent.status === 'STOCKED' || indent.status === 'INTERNAL_ISSUED' || indent.delivery_confirmed) return 3;
     if (indent.status === 'STOCK_CHECKED') return 2;
     return 2;
   }

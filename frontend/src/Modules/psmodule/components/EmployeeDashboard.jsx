@@ -21,7 +21,7 @@ const STATUS_GROUPS = [
   {
     key: 'COMPLETED',
     label: 'Completed',
-    matches: (indent) => ['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status) || (indent.status === 'PURCHASED' && indent.delivery_confirmed),
+    matches: (indent) => ['STOCK_ENTRY', 'STOCKED'].includes(indent.status),
     tone: 'completed',
   },
   { key: 'REJECTED', label: 'Rejected', matches: (indent) => indent.status === 'REJECTED', tone: 'rejected' },
@@ -38,8 +38,10 @@ function statusLabel(indent) {
   if (!indent) return 'Unknown';
   if (indent.status === 'DRAFT') return 'Draft';
   if (indent.status === 'PURCHASED') return indent.delivery_confirmed ? 'Delivered' : 'Awaiting Delivery';
+  if (indent.status === 'STOCK_CHECKED') return 'Stock Checked';
+  if (indent.status === 'INTERNAL_ISSUED') return 'Stock Issued';
   if (indent.status === 'REJECTED') return 'Rejected';
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'Completed';
+  if (['STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'Completed';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(indent.status)) return 'In Procurement';
   if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(indent.status)) return 'In Approval';
   return indent.status;
@@ -50,8 +52,10 @@ function toneClass(indent) {
   if (indent.status === 'DRAFT') return 'draft';
   if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(indent.status)) return 'approval';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(indent.status)) return 'procurement';
-  if (indent.status === 'PURCHASED') return indent.delivery_confirmed ? 'completed' : 'purchased';
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'completed';
+  if (indent.status === 'PURCHASED') return 'purchased';
+  if (indent.status === 'STOCK_CHECKED') return 'procurement';
+  if (indent.status === 'INTERNAL_ISSUED') return 'completed';
+  if (['STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'completed';
   if (indent.status === 'REJECTED') return 'rejected';
   return 'neutral';
 }
@@ -70,7 +74,7 @@ function getCurrentStageIndex(indent) {
   if (indent.status === 'DRAFT') return 0;
   if (indent.status === 'REJECTED') return 1;
   if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status) || indent.procurement_type === 'INTERNAL') {
-    if (indent.status === 'STOCKED' || indent.delivery_confirmed) return 3;
+    if (indent.status === 'STOCKED' || indent.status === 'INTERNAL_ISSUED' || indent.delivery_confirmed) return 3;
     if (indent.status === 'STOCK_CHECKED') return 2;
     return 2;
   }
@@ -270,9 +274,6 @@ export default function EmployeeDashboard({ actingRole, refreshKey, onEditDraft,
               <WorkflowTracker indent={i} />
 
               <div className="indentCardFooter">
-                <div className="muted small">
-                  Procurement: <b>{i.procurement_type || '—'}</b> · Current approver: <b>{i.current_approver ?? '—'}</b>
-                </div>
                 <div className="muted small">Current stage: <b>{statusLabel(i)}</b></div>
               </div>
             </button>

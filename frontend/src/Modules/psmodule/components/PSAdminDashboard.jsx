@@ -14,8 +14,9 @@ function statusLabel(indent) {
   if (!indent) return 'Unknown';
   if (indent.status === 'DRAFT') return 'Draft';
   if (indent.status === 'PURCHASED') return indent.delivery_confirmed ? 'Delivered' : 'Awaiting Delivery';
+  if (indent.status === 'INTERNAL_ISSUED') return 'Stock Issued';
   if (indent.status === 'REJECTED') return 'Rejected';
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'Completed';
+  if (['STOCK_CHECKED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'Completed';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(indent.status)) return 'In Procurement';
   if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(indent.status)) return 'In Approval';
   return indent.status;
@@ -34,7 +35,8 @@ function toneClass(indent) {
 
 function getStagePath(indent) {
   if (indent?.status === 'REJECTED') return TRACKER_STEPS.rejection;
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent?.status) || indent?.procurement_type === 'INTERNAL') {
+  const isInternalFlow = indent?.procurement_type === 'INTERNAL' || indent?.status === 'INTERNAL_ISSUED';
+  if (isInternalFlow) {
     return TRACKER_STEPS.internal;
   }
   if (indent?.status === 'DRAFT') return TRACKER_STEPS.draft;
@@ -45,11 +47,13 @@ function getCurrentStageIndex(indent) {
   if (!indent) return 0;
   if (indent.status === 'DRAFT') return 0;
   if (indent.status === 'REJECTED') return 1;
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status) || indent.procurement_type === 'INTERNAL') {
-    if (indent.status === 'STOCKED' || indent.delivery_confirmed) return 3;
+  const isInternalFlow = indent.procurement_type === 'INTERNAL' || indent.status === 'INTERNAL_ISSUED';
+  if (isInternalFlow) {
+    if (indent.status === 'STOCKED' || indent.status === 'INTERNAL_ISSUED' || indent.delivery_confirmed) return 3;
     if (indent.status === 'STOCK_CHECKED') return 2;
     return 2;
   }
+  if (indent.status === 'STOCK_ENTRY' || indent.status === 'STOCKED') return 8;
   if (indent.status === 'PURCHASED') return indent.delivery_confirmed ? 7 : 6;
   if (indent.status === 'BIDDING' || indent.status === 'EXTERNAL_PROCUREMENT') return 5;
   if (indent.status === 'APPROVED') return 4;
@@ -106,6 +110,11 @@ function WorkflowTracker({ indent }) {
   );
 }
 
+function isExternalStockEntryIndent(indent) {
+  // Hide internally issued/allocated flow items from PS Admin Stock Entry view.
+  return indent?.procurement_type !== 'INTERNAL';
+}
+
 export default function PSAdminDashboard({ actingRole, refreshKey }) {
   const [categories, setCategories] = useState({ pending: [], bidding: [], purchased: [], stock_entry: [] });
   const [error, setError] = useState('');
@@ -154,18 +163,20 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
   const pendingIndents = filterIndents(rawPending).map((i) => ({ ...i, _category: 'pending' }));
   const biddingIndents = filterIndents(rawBidding).map((i) => ({ ...i, _category: 'bidding' }));
   const purchasedIndents = filterIndents(rawPurchased).map((i) => ({ ...i, _category: 'purchased' }));
-  const stockEntryIndents = filterIndents(rawStockEntry).map((i) => ({ ...i, _category: 'stock_entry' }));
+  const stockEntryIndents = filterIndents(rawStockEntry)
+    .filter(isExternalStockEntryIndent)
+    .map((i) => ({ ...i, _category: 'stock_entry' }));
 
   const allIndents = [...pendingIndents, ...biddingIndents, ...purchasedIndents, ...stockEntryIndents].sort(
     (a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)
   );
 
   const counts = {
-    ALL: rawPending.length + rawBidding.length + rawPurchased.length + rawStockEntry.length,
+    ALL: rawPending.length + rawBidding.length + rawPurchased.length + stockEntryIndents.length,
     pending: rawPending.length,
     bidding: rawBidding.length,
     purchased: rawPurchased.length,
-    stock_entry: rawStockEntry.length,
+    stock_entry: stockEntryIndents.length,
   };
 
   const activeLabelMap = {

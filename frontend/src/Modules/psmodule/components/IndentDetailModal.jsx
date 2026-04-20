@@ -13,8 +13,10 @@ function statusTone(data) {
   if (!data) return 'neutral';
   if (data.status === 'DRAFT') return 'draft';
   if (data.status === 'REJECTED') return 'rejected';
-  if (data.status === 'PURCHASED') return data.delivery_confirmed ? 'completed' : 'purchased';
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) return 'completed';
+  if (data.status === 'PURCHASED') return 'purchased';
+  if (data.status === 'STOCK_CHECKED') return 'procurement';
+  if (data.status === 'INTERNAL_ISSUED') return 'completed';
+  if (['STOCK_ENTRY', 'STOCKED'].includes(data.status)) return 'completed';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(data.status)) return 'procurement';
   if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(data.status)) return 'approval';
   return 'neutral';
@@ -24,8 +26,10 @@ function humanStatus(data) {
   if (!data) return 'Unknown';
   if (data.status === 'DRAFT') return 'Draft';
   if (data.status === 'PURCHASED') return data.delivery_confirmed ? 'Delivered' : 'Awaiting Delivery';
+  if (data.status === 'STOCK_CHECKED') return 'Stock Checked';
+  if (data.status === 'INTERNAL_ISSUED') return 'Stock Issued';
   if (data.status === 'REJECTED') return 'Rejected';
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) return 'Completed';
+  if (['STOCK_ENTRY', 'STOCKED'].includes(data.status)) return 'Completed';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(data.status)) return 'In Procurement';
   if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(data.status)) return 'In Approval';
   return data.status;
@@ -35,7 +39,8 @@ function workflowSteps(data) {
   if (!data) return TRACKERS.external;
   if (data.status === 'DRAFT') return TRACKERS.draft;
   if (data.status === 'REJECTED') return TRACKERS.rejected;
-  if (data.procurement_type === 'INTERNAL' || ['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) {
+  const isInternalFlow = data.procurement_type === 'INTERNAL' || data.status === 'INTERNAL_ISSUED';
+  if (isInternalFlow) {
     return TRACKERS.internal;
   }
   return TRACKERS.external;
@@ -45,11 +50,13 @@ function currentStageIndex(data) {
   if (!data) return 0;
   if (data.status === 'DRAFT') return 0;
   if (data.status === 'REJECTED') return 1;
-  if (data.procurement_type === 'INTERNAL' || ['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(data.status)) {
+  const isInternalFlow = data.procurement_type === 'INTERNAL' || data.status === 'INTERNAL_ISSUED';
+  if (isInternalFlow) {
     if (data.status === 'STOCKED' || data.status === 'INTERNAL_ISSUED') return 3;
     if (data.status === 'STOCK_CHECKED') return 2;
     return 2;
   }
+  if (data.status === 'STOCK_ENTRY' || data.status === 'STOCKED') return 8;
   if (data.status === 'PURCHASED') return data.delivery_confirmed ? 7 : 6;
   if (data.status === 'BIDDING' || data.status === 'EXTERNAL_PROCUREMENT') return 5;
   if (data.status === 'APPROVED') return 4;
