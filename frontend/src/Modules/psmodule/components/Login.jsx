@@ -22,26 +22,41 @@ export default function Login({ onLoggedIn }) {
   }
 
   return (
-    <div className="card">
-      <h2>Sign in</h2>
-      <p className="muted">Use your Django username/password (JWT auth).</p>
-      <form onSubmit={onSubmit} className="form">
-        <label>
-          Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-        </label>
-        <label>
-          Password
+    <div className="loginFormView">
+      <p className="loginFormHint">Use your Django username/password (JWT auth).</p>
+      <form onSubmit={onSubmit} className="loginForm">
+        <label className="loginField">
+          <span className="loginFieldLabel">
+            USERNAME <span className="loginRequired">*</span>
+          </span>
           <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            placeholder="Username / Roll No."
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
           />
         </label>
-        {error ? <div className="error">{error}</div> : null}
-        <button className="btn" disabled={loading}>
-          {loading ? 'Signing in…' : 'Sign in'}
+        <label className="loginField">
+          <span className="loginFieldLabel">
+            PASSWORD <span className="loginRequired">*</span>
+          </span>
+          <div className="inputWithIcon">
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+            <span className="inputIcon">👁️</span>
+          </div>
+        </label>
+        <div className="loginFormFooter">
+          <div className="loginReset">Reset Password</div>
+          {error ? <div className="error">{error}</div> : <div className="loginSpacer" />}
+        </div>
+        <button className="btn loginSubmit" disabled={loading}>
+          {loading ? 'Signing in…' : 'Login'}
         </button>
       </form>
     </div>

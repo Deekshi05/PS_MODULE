@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { readPSAdminCategories } from '../api';
 import IndentDetailModal from './IndentDetailModal';
 import PSAdminActionBar from './PSAdminActionBar';
+import TabsSection from './ui/TabsSection';
 
 const TRACKER_STEPS = {
   external: ['Submitted', 'HOD', 'Dept Admin', 'Director', 'Registrar', 'PS Admin', 'Purchased', 'Delivered', 'Stocked'],
@@ -200,6 +201,17 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
 
   const activeLabel = activeLabelMap[activeCategory] || 'All';
 
+  const categoryTabs = useMemo(
+    () => [
+      { key: 'ALL', label: `All (${counts.ALL || 0})` },
+      { key: 'pending', label: `Pending (${counts.pending || 0})` },
+      { key: 'bidding', label: `Bidding (${counts.bidding || 0})` },
+      { key: 'purchased', label: `Purchased (${counts.purchased || 0})` },
+      { key: 'stock_entry', label: `Stock Entry (${counts.stock_entry || 0})` },
+    ],
+    [counts]
+  );
+
   return (
     <div className="roleDashboard">
       <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -215,23 +227,7 @@ export default function PSAdminDashboard({ actingRole, refreshKey }) {
         />
       </div>
 
-      <div className="row" style={{ marginTop: 12 }}>
-        <button className={activeCategory === 'ALL' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('ALL')}>
-          All ({counts.ALL || 0})
-        </button>
-        <button className={activeCategory === 'pending' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('pending')}>
-          Pending ({counts.pending || 0})
-        </button>
-        <button className={activeCategory === 'bidding' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('bidding')}>
-          Bidding ({counts.bidding || 0})
-        </button>
-        <button className={activeCategory === 'purchased' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('purchased')}>
-          Purchased ({counts.purchased || 0})
-        </button>
-        <button className={activeCategory === 'stock_entry' ? 'chip active' : 'chip'} onClick={() => setActiveCategory('stock_entry')}>
-          Stock Entry ({counts.stock_entry || 0})
-        </button>
-      </div>
+      <TabsSection tabs={categoryTabs} activeTab={activeCategory} onChange={setActiveCategory} />
 
       {error ? <div className="error">{error}</div> : null}
 

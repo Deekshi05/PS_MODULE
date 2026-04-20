@@ -108,30 +108,38 @@ function App() {
 
   if (!authed) {
     return (
-      <div className="appShell">
-        <aside className="sidebar">
-          <div className="sbLogo">PS</div>
-          <button className="sbBtn active" title="Home" type="button">
-            <Icon name="home" />
-          </button>
-        </aside>
-        <div className="main">
-          <div className="topbar">
-            <div className="title">Purchase & Store</div>
-            <div className="topRight muted small">Indent workflow (RBAC + routing)</div>
-          </div>
-          <div className="content">
-            <div className="pageHead">
-              <div>
-                <div className="breadcrumb">Home &nbsp;›&nbsp; Sign in</div>
-              </div>
-            </div>
-            <div className="authCenter">
-              <div className="authPanel">
-                <Login onLoggedIn={() => setAuthed(true)} />
-              </div>
+      <div className="loginPage">
+        <div className="loginTopbar">
+          <div className="loginBrand">
+            <div className="loginBrandMark">PDPM</div>
+            <div className="loginBrandText">
+              <span>IIITDM</span>
+              <strong>JABALPUR</strong>
+              <span className="loginBrandSmall">FUSION</span>
             </div>
           </div>
+          <div className="loginTopbarMeta">20 APR 2026</div>
+        </div>
+        <div className="loginContent">
+          <div className="loginHero">
+            <div className="loginHeroTitle">WELCOME</div>
+            <div className="loginHeroSubtitle">TO</div>
+            <div className="loginHeroAccent">FUSION</div>
+          </div>
+          <div className="authPanel loginPanel">
+            <div className="loginCard card">
+              <div className="loginHead">
+                <div className="loginBack">← BACK</div>
+                <h1>Login</h1>
+                <div className="loginUnderline" />
+              </div>
+              <Login onLoggedIn={() => setAuthed(true)} />
+            </div>
+          </div>
+        </div>
+        <div className="loginPageFooter">
+          <span className="loginFooterDot" />
+          <span>PDPM IIITDM JABALPUR</span>
         </div>
       </div>
     );

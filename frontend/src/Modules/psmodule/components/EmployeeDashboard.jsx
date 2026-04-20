@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { readIndents, writeConfirmDelivery, writeDeleteIndentDraft } from '../api';
 import IndentDetailModal from './IndentDetailModal';
+import TabsSection from './ui/TabsSection';
 
 const STATUS_GROUPS = [
   { key: 'ALL', label: 'All', matches: () => true, tone: 'neutral' },
@@ -226,18 +227,25 @@ export default function EmployeeDashboard({ actingRole, refreshKey, onEditDraft,
     }
   }
 
+  const statusTabs = useMemo(
+    () =>
+      filterMeta.map((group) => ({
+        key: group.key,
+        label: `${group.label} (${group.value || 0})`,
+        disabled: group.value === 0 && group.key !== 'ALL',
+      })),
+    [filterMeta]
+  );
+
+  const showStatusTabs = counts.ALL > 0;
+
   return (
     <div className="employeeDashboard">
-      <div className="dashboardTabs" role="tablist" aria-label="Indent filters">
-        {filterMeta.map((group) => (
-          <button key={group.key} className={filter === group.key ? 'chip active' : 'chip'} onClick={() => setFilter(group.key)} type="button">
-            {group.label} ({group.value || 0})
-          </button>
-        ))}
-      </div>
+      {showStatusTabs ? <TabsSection tabs={statusTabs} activeTab={filter} onChange={setFilter} /> : null}
 
       {error ? <div className="error">{error}</div> : null}
       {actionError ? <div className="error">{actionError}</div> : null}
+
       <div className="indentCards">
         {visible.map((i) => (
           <article className={`indentCard indentCard-${toneClass(i)}`} key={i.id}>

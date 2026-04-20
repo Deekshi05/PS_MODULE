@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { readDecisions, readIndents, readProcurementReady } from '../api';
 import HodActionBar from './HodActionBar';
 import IndentDetailModal from './IndentDetailModal';
+import TabsSection from './ui/TabsSection';
 
 const TRACKER_STEPS = {
   external: ['Submitted', 'HOD', 'Dept Admin', 'Director', 'Registrar', 'PS Admin', 'Purchased', 'Delivered', 'Stocked'],
@@ -146,6 +147,15 @@ export default function HodDashboard({ actingRole, refreshKey }) {
   const list = tab === 'DECIDED' ? decisions : indents;
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = normalizedQuery ? list.filter((i) => (i.purpose || '').toLowerCase().includes(normalizedQuery)) : list;
+
+  const tabsOptions = useMemo(
+    () => [
+      { key: 'PENDING', label: 'Pending' },
+      { key: 'PROCUREMENT', label: 'Procurement' },
+      { key: 'DECIDED', label: 'Decided' },
+    ],
+    []
+  );
   const showProcurementTab = actingRole === 'DEPADMIN' || actingRole === 'PS_ADMIN';
   const title = tab === 'DECIDED' ? 'My decisions' : tab === 'PROCUREMENT' ? 'Procurement ready' : 'Approval queue';
 
@@ -153,23 +163,6 @@ export default function HodDashboard({ actingRole, refreshKey }) {
     <div className="roleDashboard">
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h2 style={{ margin: 0 }}>{title}</h2>
-        <div className="row">
-          <button className={tab === 'PENDING' ? 'chip active' : 'chip'} type="button" onClick={() => setTab('PENDING')}>
-            Pending
-          </button>
-          {showProcurementTab ? (
-            <button
-              className={tab === 'PROCUREMENT' ? 'chip active' : 'chip'}
-              type="button"
-              onClick={() => setTab('PROCUREMENT')}
-            >
-              Procurement Ready
-            </button>
-          ) : null}
-          <button className={tab === 'DECIDED' ? 'chip active' : 'chip'} type="button" onClick={() => setTab('DECIDED')}>
-            Approved/Rejected
-          </button>
-        </div>
       </div>
 
       {actingRole === 'DEPADMIN' || actingRole === 'PS_ADMIN' ? (
@@ -183,7 +176,11 @@ export default function HodDashboard({ actingRole, refreshKey }) {
         </div>
       ) : null}
 
-      {error ? <div className="error">{error}</div> : null}
+      <TabsSection
+        tabs={showProcurementTab ? tabsOptions : tabsOptions.filter((t) => t.key !== 'PROCUREMENT')}
+        activeTab={tab}
+        onChange={setTab}
+      />
 
       <div className="indentCards">
         {filtered.map((i) => (
