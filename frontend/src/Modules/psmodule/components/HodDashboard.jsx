@@ -15,6 +15,7 @@ function statusLabel(indent) {
   if (indent.status === 'DRAFT') return 'Draft';
   if (indent.status === 'PURCHASED') return indent.delivery_confirmed ? 'Delivered' : 'Awaiting Delivery';
   if (indent.status === 'INTERNAL_ISSUED') return 'Stock Issued';
+  if (indent.status === 'STOCK_ALLOCATED') return 'Stock Allocated';
   if (indent.status === 'REJECTED') return 'Rejected';
   if (['STOCK_CHECKED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'Completed';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(indent.status)) return 'In Procurement';
@@ -28,14 +29,14 @@ function toneClass(indent) {
   if (['SUBMITTED', 'UNDER_HOD_REVIEW', 'FORWARDED', 'FORWARDED_TO_DIRECTOR', 'APPROVED_BY_DEP_ADMIN', 'APPROVED'].includes(indent.status)) return 'approval';
   if (['BIDDING', 'EXTERNAL_PROCUREMENT'].includes(indent.status)) return 'procurement';
   if (indent.status === 'PURCHASED') return indent.delivery_confirmed ? 'completed' : 'purchased';
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status)) return 'completed';
+  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED', 'STOCK_ALLOCATED'].includes(indent.status)) return 'completed';
   if (indent.status === 'REJECTED') return 'rejected';
   return 'neutral';
 }
 
 function getStagePath(indent) {
   if (indent?.status === 'REJECTED') return TRACKER_STEPS.rejection;
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent?.status) || indent?.procurement_type === 'INTERNAL') {
+  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED', 'STOCK_ALLOCATED'].includes(indent?.status) || indent?.procurement_type === 'INTERNAL') {
     return TRACKER_STEPS.internal;
   }
   if (indent?.status === 'DRAFT') return TRACKER_STEPS.draft;
@@ -46,8 +47,8 @@ function getCurrentStageIndex(indent) {
   if (!indent) return 0;
   if (indent.status === 'DRAFT') return 0;
   if (indent.status === 'REJECTED') return 1;
-  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED'].includes(indent.status) || indent.procurement_type === 'INTERNAL') {
-    if (indent.status === 'STOCKED' || indent.status === 'INTERNAL_ISSUED' || indent.delivery_confirmed) return 3;
+  if (['STOCK_CHECKED', 'INTERNAL_ISSUED', 'STOCK_ENTRY', 'STOCKED', 'STOCK_ALLOCATED'].includes(indent.status) || indent.procurement_type === 'INTERNAL') {
+    if (indent.status === 'STOCKED' || indent.status === 'INTERNAL_ISSUED' || indent.status === 'STOCK_ALLOCATED' || indent.delivery_confirmed) return 3;
     if (indent.status === 'STOCK_CHECKED') return 2;
     return 2;
   }

@@ -15,6 +15,7 @@ from psmodule.selectors import (
     create_indent_audit_event,
     create_indent_entity,
     create_indent_line_items,
+    create_stock_allocation_with_line_map,
     create_stock_entry_from_indent_items_ps_admin,
     create_stock_entry_with_line_map,
     get_department_depadmin,
@@ -309,7 +310,6 @@ def apply_hod_action(
                     indent.procurement_type = Indent.ProcurementType.EXTERNAL
             else:
                 # Direct approval from FORWARDED: check if stock actually exists
-                from psmodule.selectors import check_stock_availability_for_indent_id
                 stock_exists = check_stock_availability_for_indent_id(indent.id)
                 indent.stock_available = stock_exists
                 indent.procurement_type = (
@@ -355,6 +355,37 @@ def apply_hod_action(
             save_indent(indent, ["status", "current_approver", "updated_at"])
         else:
             raise ValidationError({"action": "Invalid approver role"})
+
+    elif action_name == "ALLOCATE_STOCK":
+        if actor.role != ActingRole.DEPADMIN:
+            raise ValidationError({"detail": "Only Department Admin can allocate stock."})
+        
+        if indent.status not in (Indent.Status.FORWARDED, Indent.Status.STOCK_CHECKED):
+            raise ValidationError(
+                {"detail": "Only forwarded or stock-checked indents can be allocated."}
+            )
+
+        # Check stock availability
+        stock_available = check_stock_availability_for_indent_id(indent.id)
+        if not stock_available:
+            raise ValidationError({"detail": "Insufficient stock available for allocation."})
+
+        # Allocate stock
+        allocation = create_stock_allocation(
+            indent_id=indent.id,
+            actor=actor,
+            request_user=request_user,
+            notes=notes,
+        )
+
+        indent.status = Indent.Status.STOCK_ALLOCATED
+        indent.procurement_type = Indent.ProcurementType.INTERNAL
+        indent.stock_available = True
+        indent.current_approver = None
+        save_indent(
+            indent,
+            ["status", "procurement_type", "stock_available", "current_approver", "updated_at"],
+        )
 
     elif action_name == "REJECT":
         indent.status = Indent.Status.REJECTED
@@ -480,6 +511,33 @@ def create_stock_entry(
         "indent": get_indent_data(indent.id),
         "stock_entry": StockEntrySerializer(entry).data,
     }
+
+
+def create_stock_allocation(
+    indent_id: int,
+    actor,
+    request_user,
+    notes: str = "",
+) -> StockAllocation:
+    indent = get_indent_by_id(indent_id)
+    
+    with transaction.atomic():
+        allocation = create_stock_allocation_with_line_map(
+            indent=indent,
+            request_user=request_user,
+            acting_role=actor.role,
+            notes=notes or "",
+        )
+
+        create_indent_audit_event(
+            indent=indent,
+            user=request_user,
+            acting_role=actor.role,
+            action="STOCK_ALLOCATION",
+            notes=notes or "",
+        )
+
+    return allocation
 
 
 def apply_ps_admin_action(

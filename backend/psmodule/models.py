@@ -91,6 +91,7 @@ class Indent(models.Model):
         BIDDING = "BIDDING", "Bidding"
         PURCHASED = "PURCHASED", "Purchased"
         STOCK_ENTRY = "STOCK_ENTRY", "Stock Entry"
+        STOCK_ALLOCATED = "STOCK_ALLOCATED", "Stock Allocated"
 
     class ProcurementType(models.TextChoices):
         INTERNAL = "INTERNAL", "Internal Stock"
@@ -263,3 +264,38 @@ class StockEntryItem(models.Model):
 
     def __str__(self) -> str:
         return f"StockEntry {self.stock_entry_id}: {self.item_id} x {self.quantity}"
+
+
+class StockAllocation(models.Model):
+    indent = models.ForeignKey(
+        Indent, on_delete=models.PROTECT, related_name="stock_allocations"
+    )
+    allocated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="stock_allocations"
+    )
+    acting_role = models.CharField(max_length=50)
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"StockAllocation #{self.id} for indent {self.indent_id}"
+
+
+class StockAllocationItem(models.Model):
+    stock_allocation = models.ForeignKey(
+        StockAllocation, on_delete=models.CASCADE, related_name="items"
+    )
+    item = models.ForeignKey(
+        StoreItem, on_delete=models.PROTECT, related_name="stock_allocation_lines"
+    )
+    quantity = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["stock_allocation", "item"], name="uniq_item_per_stock_allocation"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"StockAllocation {self.stock_allocation_id}: {self.item_id} x {self.quantity}"

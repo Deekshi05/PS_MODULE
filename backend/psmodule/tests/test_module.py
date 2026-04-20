@@ -22,7 +22,10 @@ from psmodule.services import (
     create_stock_entry,
     delete_indent_draft,
 )
-from psmodule.selectors import get_ps_admin_indents_by_category
+from psmodule.selectors import (
+    get_ps_admin_indents_by_category,
+    get_stock_breakdown_data,
+)
 
 
 class WorkflowPs002StockEntryTests(TestCase):
@@ -504,6 +507,91 @@ class DepadminInternalProcurementTests(TestCase):
         self.assertFalse(direct_indent.stock_available)
         self.assertEqual(direct_indent.procurement_type, Indent.ProcurementType.EXTERNAL)
 
+    def test_depadmin_allocate_stock_reduces_central_and_increases_department_stock(self):
+        """ALLOCATE_STOCK should decrement central current stock and update department stock."""
+        # Ensure indent is in a state where allocation is allowed
+        self.indent.status = Indent.Status.STOCK_CHECKED
+        self.indent.stock_available = True
+        self.indent.procurement_type = Indent.ProcurementType.INTERNAL
+        self.indent.save(update_fields=["status", "stock_available", "procurement_type", "updated_at"])
+
+        apply_hod_action(
+            self.indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "ALLOCATE_STOCK",
+            notes="Allocating stock for request",
+            request_user=self.depadmin_user,
+        )
+
+        self.indent.refresh_from_db()
+        self.assertEqual(self.indent.status, Indent.Status.STOCK_ALLOCATED)
+        self.assertEqual(CurrentStock.objects.get(item=self.item1).quantity, 17)
+        self.assertEqual(
+            DepartmentStock.objects.get(stock_name="Pen", department="dep_cse").quantity,
+            4,
+        )
+
+    def test_depadmin_allocate_stock_reduces_department_stock_when_dept_inventory_used(self):
+        """ALLOCATE_STOCK should consume department stock when central stock is unavailable."""
+        item_dept_only = StoreItem.objects.create(name="Notebook", unit="nos")
+        DepartmentStock.objects.create(
+            stock_name="Notebook",
+            department="dep_cse",
+            quantity=5,
+        )
+
+        dept_indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Request from dept stock",
+            status=Indent.Status.STOCK_CHECKED,
+            stock_available=True,
+            procurement_type=Indent.ProcurementType.INTERNAL,
+            current_approver=self.depadmin_info,
+        )
+        IndentItem.objects.create(indent=dept_indent, item=item_dept_only, quantity=2)
+
+        apply_hod_action(
+            dept_indent.id,
+            self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+            "ALLOCATE_STOCK",
+            notes="Allocating department stock",
+            request_user=self.depadmin_user,
+        )
+
+        self.assertEqual(
+            DepartmentStock.objects.get(stock_name="Notebook", department="dep_cse").quantity,
+            3,
+        )
+        self.assertEqual(CurrentStock.objects.filter(item=item_dept_only).count(), 0)
+
+    def test_stock_breakdown_counts_department_stock_for_available_items(self):
+        """Stock breakdown should show available when department stock satisfies the request."""
+        item_laptop = StoreItem.objects.create(name="Laptop", unit="nos")
+        DepartmentStock.objects.create(
+            stock_name="laptop",
+            department="dep_cse",
+            quantity=2,
+        )
+
+        breakdown_indent = Indent.objects.create(
+            indenter=self.employee_info,
+            department=self.dept,
+            purpose="Laptop request",
+            status=Indent.Status.FORWARDED,
+            current_approver=self.depadmin_info,
+        )
+        IndentItem.objects.create(indent=breakdown_indent, item=item_laptop, quantity=2)
+
+        data = get_stock_breakdown_data(
+            indent_id=breakdown_indent.id,
+            actor=self._actor(ActingRole.DEPADMIN, self.depadmin_info),
+        )
+
+        self.assertTrue(data["all_available"])
+        self.assertEqual(data["items"][0]["available_qty"], 2)
+        self.assertTrue(data["items"][0]["ok"])
+
     def test_ps_admin_internal_allocate(self):
         apply_hod_action(
             self.indent.id,
@@ -573,10 +661,10 @@ class DepadminInternalProcurementTests(TestCase):
         dept_indent.refresh_from_db()
         self.assertEqual(dept_indent.status, Indent.Status.INTERNAL_ISSUED)
         self.assertTrue(dept_indent.delivery_confirmed)
-        # Department stock should be unchanged (already had the items)
+        # Department stock should be decremented because the request consumes local inventory.
         self.assertEqual(
             DepartmentStock.objects.get(stock_name="Notebook", department="dep_cse").quantity,
-            5,
+            3,
         )
 
     def test_depadmin_approve_internal_when_department_stock_matches_laptop(self):

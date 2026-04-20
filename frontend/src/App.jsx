@@ -49,7 +49,9 @@ function Icon({ name }) {
 }
 
 function App() {
-  const [authed, setAuthed] = useState(Boolean(getAccessToken()));
+  const token = getAccessToken();
+  const [authed, setAuthed] = useState(Boolean(token));
+  const [authChecked, setAuthChecked] = useState(!Boolean(token));
   const [role, setRole] = useState(localStorage.getItem('acting_role') || 'EMPLOYEE');
   const [allowedRoles, setAllowedRoles] = useState(['EMPLOYEE']);
 
@@ -77,15 +79,32 @@ function App() {
         }
       })
       .catch(() => {
-        // If /me fails for any reason, keep a safe fallback.
+        if (cancelled) return;
+        clearTokens();
+        setAuthed(false);
         setAllowedRoles(['EMPLOYEE']);
         onSetRole('EMPLOYEE');
+      })
+      .finally(() => {
+        if (!cancelled) setAuthChecked(true);
       });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
+
+  if (!authChecked) {
+    return (
+      <div className="appShell">
+        <div className="main">
+          <div className="content">
+            <div className="loading">Verifying session…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!authed) {
     return (

@@ -9,6 +9,8 @@ from psmodule.models import (
     Indent,
     IndentDocument,
     IndentItem,
+    StockAllocation,
+    StockAllocationItem,
     StockEntry,
     StockEntryItem,
     StoreItem,
@@ -294,7 +296,7 @@ class IndentPartialUpdateSerializer(serializers.Serializer):
 
 
 class HODActionSerializer(serializers.Serializer):
-    action = serializers.ChoiceField(choices=["APPROVE", "REJECT", "FORWARD"])
+    action = serializers.ChoiceField(choices=["APPROVE", "REJECT", "FORWARD", "ALLOCATE_STOCK"])
     notes = serializers.CharField(required=False, allow_blank=True)
     forward_to_department_code = serializers.CharField(required=False, allow_blank=True)
 
@@ -337,4 +339,20 @@ class StockEntrySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StockEntry
+        fields = ["id", "indent", "acting_role", "notes", "created_at", "items"]
+
+
+class StockAllocationItemSerializer(serializers.ModelSerializer):
+    item = StoreItemSerializer()
+
+    class Meta:
+        model = StockAllocationItem
+        fields = ["id", "item", "quantity"]
+
+
+class StockAllocationSerializer(serializers.ModelSerializer):
+    items = StockAllocationItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = StockAllocation
         fields = ["id", "indent", "acting_role", "notes", "created_at", "items"]

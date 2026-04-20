@@ -71,6 +71,16 @@ const client = axios.create({
   baseURL: API_BASE,
 });
 
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      clearTokens();
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Reads
 export async function readIndents({ actingRole }) {
   try {
@@ -263,6 +273,16 @@ departmentApi.interceptors.request.use((config) => {
   }
   return config;
 });
+
+departmentApi.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      clearTokens();
+    }
+    return Promise.reject(error);
+  }
+);
 
 export async function fetchMe() {
   const { data } = await departmentApi.get('/me/');

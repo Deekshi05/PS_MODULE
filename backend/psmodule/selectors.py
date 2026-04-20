@@ -13,6 +13,8 @@ from psmodule.models import (
     Indent,
     IndentAudit,
     IndentItem,
+    StockAllocation,
+    StockAllocationItem,
     StockCheckStatus,
     StockEntry,
     StockEntryItem,
@@ -335,17 +337,54 @@ def get_stock_breakdown_data(indent_id: int, actor) -> dict:
         )
     )
 
+    dept_stock_map: Dict[str, int] = {}
+    if indent.department:
+        from psmodule.department_stock.models import Stock as DepartmentStock
+
+        dept_code = getattr(indent.department, "code", None)
+        dept_lookup_values = []
+        if dept_code:
+            dept_lookup_values.append(f"dep_{dept_code.lower()}")
+            dept_lookup_values.append(dept_code.lower())
+        dept_lookup_values.append(f"dep_{indent.department.id}")
+        dept_lookup_values.append(str(indent.department.id))
+
+        dept_stock_map = {
+            str(stock_name).strip().lower(): qty
+            for stock_name, qty in DepartmentStock.objects.filter(
+                department__in=[v for v in dept_lookup_values if v]
+            ).values_list("stock_name", "quantity")
+        }
+
+    from psmodule.models import StoreItem
+    item_name_map = dict(
+        StoreItem.objects.filter(id__in=item_ids).values_list("id", "name")
+    )
+
     breakdown: List[dict] = []
     for line in lines:
         requested = line["quantity"]
-        available = stock_map.get(line["item_id"], 0)
-        ok = available >= requested
+        item_id = line["item_id"]
+        available = stock_map.get(item_id, 0)
+        dept_available = 0
+        item_name = item_name_map.get(item_id, "")
+        if item_name:
+            item_key = item_name.strip().lower()
+            dept_available = dept_stock_map.get(item_key, 0)
+            if dept_available == 0:
+                for stock_name, qty in dept_stock_map.items():
+                    if stock_name.lower() == item_key:
+                        dept_available = qty
+                        break
+
+        best_available = max(available, dept_available)
+        ok = best_available >= requested
         breakdown.append(
             {
-                "item_id": line["item_id"],
-                "item_name": line["item__name"],
+                "item_id": item_id,
+                "item_name": item_name,
                 "requested_qty": requested,
-                "available_qty": available,
+                "available_qty": best_available,
                 "ok": ok,
             }
         )
@@ -768,6 +807,37 @@ def create_stock_entry_with_line_map(
     return entry
 
 
+def create_stock_allocation_with_line_map(
+    *,
+    indent: Indent,
+    request_user,
+    acting_role: str,
+    notes: str,
+) -> StockAllocation:
+    # Get the requested quantities from indent items
+    payload_map = {
+        line.item_id: line.quantity
+        for line in indent.items.all()
+        if line.item_id is not None
+    }
+
+    allocation = StockAllocation.objects.create(
+        indent=indent,
+        allocated_by=request_user,
+        acting_role=acting_role,
+        notes=notes or "",
+    )
+    for item_id, qty in payload_map.items():
+        StockAllocationItem.objects.create(
+            stock_allocation=allocation, item_id=item_id, quantity=qty
+        )
+
+    # Deduct actual stock from the proper source.
+    internal_allocate_from_central_to_department(indent)
+
+    return allocation
+
+
 def create_stock_entry_from_indent_items_ps_admin(
     *,
     indent: Indent,
@@ -855,6 +925,7 @@ def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, in
     # Get department code for department stock lookup
     dept_code = getattr(indent.department, "code", None) or ""
     dept_stock_map: Dict[str, int] = {}
+    dept_stock_objects: dict[str, object] = {}
     if dept_code:
         from psmodule.department_stock.models import Stock as DepartmentStock
         dept_lookup_values = [
@@ -863,18 +934,21 @@ def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, in
             f"dep_{indent.department.id}",
             str(indent.department.id),
         ]
-        dept_stock_map = {
-            str(stock_name).strip().lower(): qty
-            for stock_name, qty in DepartmentStock.objects.filter(
-                department__in=[v for v in dept_lookup_values if v]
-            ).values_list("stock_name", "quantity")
-        }
+        for stock in DepartmentStock.objects.select_for_update().filter(
+            department__in=[v for v in dept_lookup_values if v]
+        ):
+            stock_key = str(stock.stock_name).strip().lower()
+            if not stock_key:
+                continue
+            dept_stock_map[stock_key] = stock.quantity
+            dept_stock_objects[stock_key] = stock
 
     to_decrement_from_central: dict[int, int] = {}
-    
+    to_decrement_from_department: dict[int, tuple[object, int]] = {}
+
     for item_id, need in aggregated.items():
         item_name = item_name_map.get(item_id, "")
-        
+
         # Check central stock first
         central_stock = (
             CurrentStock.objects.select_for_update()
@@ -882,24 +956,27 @@ def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, in
             .first()
         )
         central_avail = central_stock.quantity if central_stock else 0
-        
+
         # Resolve department stock by exact and case-insensitive item name
         dept_avail = 0
+        dept_stock_obj = None
         if item_name:
-            dept_avail = dept_stock_map.get(item_name, 0)
-            if dept_avail == 0:
-                item_name_lower = item_name.lower()
-                for stock_name, qty in dept_stock_map.items():
-                    if stock_name.lower() == item_name_lower:
-                        dept_avail = qty
+            item_key = item_name.strip().lower()
+            dept_stock_obj = dept_stock_objects.get(item_key)
+            if dept_stock_obj is None:
+                for stock_key, stock_obj in dept_stock_objects.items():
+                    if stock_key.lower() == item_key:
+                        dept_stock_obj = stock_obj
                         break
-        
+            if dept_stock_obj is not None:
+                dept_avail = dept_stock_obj.quantity
+
         if central_avail >= need:
             # Central has enough: decrement from central
             to_decrement_from_central[item_id] = need
         elif dept_avail >= need:
-            # Department has enough: no decrement needed
-            pass
+            # Department has enough: decrement department stock directly
+            to_decrement_from_department[item_id] = (dept_stock_obj, need)
         else:
             # Not enough in either location
             raise ValidationError(
@@ -910,8 +987,8 @@ def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, in
                     )
                 }
             )
-    
-    # Only decrement from central if we found stock there
+
+    # Decrement central stock for items that came from central
     for item_id, need in to_decrement_from_central.items():
         stock = (
             CurrentStock.objects.select_for_update()
@@ -922,6 +999,12 @@ def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, in
             stock.quantity -= need
             stock.save(update_fields=["quantity", "updated_at"])
 
+    # Decrement department stock for items fulfilled from department inventory
+    for item_id, (dept_stock, need) in to_decrement_from_department.items():
+        if dept_stock is not None:
+            dept_stock.quantity -= need
+            dept_stock.save(update_fields=["quantity"])
+
     # Increment department stock for items that came from central
     if to_decrement_from_central:
         from psmodule.department_stock.selectors import (
@@ -931,7 +1014,7 @@ def internal_allocate_from_central_to_department(indent: Indent) -> dict[int, in
             dept_code,
             to_decrement_from_central,
         )
-    
+
     return aggregated
 
 

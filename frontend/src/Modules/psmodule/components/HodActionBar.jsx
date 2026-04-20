@@ -1,16 +1,27 @@
-import { useState } from 'react';
-import { writeCreateStockEntry, writeHodAction } from '../api';
+import { useEffect, useState } from 'react';
+import { readStockBreakdown, writeCreateStockEntry, writeHodAction } from '../api';
 
 export default function HodActionBar({ actingRole, indent, onDone, mode = 'PENDING' }) {
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const canApprove = ['DEPADMIN', 'HOD', 'REGISTRAR', 'DIRECTOR'].includes(actingRole) && mode === 'PENDING';
+  const [stockBreakdown, setStockBreakdown] = useState(null);
+  const canApprove = ['HOD', 'REGISTRAR', 'DIRECTOR'].includes(actingRole) && mode === 'PENDING';
+  const canAllocateStock = actingRole === 'DEPADMIN' && mode === 'PENDING';
+  const canForwardToDirector = actingRole === 'DEPADMIN' && mode === 'PENDING';
   // Must match backend get_indent_for_stock_entry: PURCHASED + delivery confirmed only.
   const canCreateStockEntry =
     ['DEPADMIN', 'PS_ADMIN'].includes(actingRole) &&
     indent.status === 'PURCHASED' &&
     Boolean(indent.delivery_confirmed);
+
+  useEffect(() => {
+    if (canAllocateStock) {
+      readStockBreakdown({ actingRole, indentId: indent.id })
+        .then(setStockBreakdown)
+        .catch((err) => setError(err.message));
+    }
+  }, [actingRole, indent.id, canAllocateStock]);
 
   async function doAction(action) {
     setError('');
@@ -31,10 +42,38 @@ export default function HodActionBar({ actingRole, indent, onDone, mode = 'PENDI
     <div className="actionBar">
       <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (optional)" />
 
+      {canAllocateStock && stockBreakdown && (
+        <div className="stockInfo">
+          <h4>Stock Availability</h4>
+          {stockBreakdown.items.map((item) => (
+            <div key={item.item_id} className="stockItem">
+              <span>{item.item_name}</span>
+              <span>Available: {item.available_qty}</span>
+              <span>Requested: {item.requested_qty}</span>
+              <span className={item.ok ? 'ok' : 'insufficient'}>
+                {item.ok ? '✓' : '✗ Insufficient'}
+              </span>
+            </div>
+          ))}
+          {!stockBreakdown.all_available && (
+            <div className="error">Cannot allocate: Insufficient stock for some items.</div>
+          )}
+        </div>
+      )}
+
       <div className="row">
         {canApprove ? (
           <button className="btn" disabled={loading} onClick={() => doAction('APPROVE')}>
             Approve
+          </button>
+        ) : null}
+        {canAllocateStock ? (
+          <button 
+            className="btn" 
+            disabled={loading || !stockBreakdown?.all_available} 
+            onClick={() => doAction('ALLOCATE_STOCK')}
+          >
+            Issue Stock
           </button>
         ) : null}
         {canApprove ? (
@@ -42,7 +81,7 @@ export default function HodActionBar({ actingRole, indent, onDone, mode = 'PENDI
             Reject
           </button>
         ) : null}
-        {canApprove && actingRole === 'DEPADMIN' ? (
+        {canForwardToDirector ? (
           <button className="btn ghost" disabled={loading} onClick={() => doAction('FORWARD')}>
             Forward to Director
           </button>
